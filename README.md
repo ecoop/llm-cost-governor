@@ -14,6 +14,8 @@ Wrap your existing Anthropic / OpenAI / Voyage SDK calls with a single `guarded_
 
 The library was extracted from [Pitchcraft](https://github.com/ecoop/pitchcraft) and is currently consumed there in production; a second consumer ([Rulebook](https://github.com/ecoop/rulebook)) is scheduled to adopt it.
 
+**Adopting this in a new app?** See [`docs/integration.md`](docs/integration.md) for the DI pattern, FastAPI init-order gotcha, constructor signatures, and reference implementation.
+
 ---
 
 ## Install
