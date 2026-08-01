@@ -1,0 +1,75 @@
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "llm-guardrails"
+version = "0.1.0"
+description = "Composable pre-call and post-call hooks for LLM API calls: pricing, budgets, cost caps, rate limits, event log, observability."
+readme = "README.md"
+license = { file = "LICENSE" }
+authors = [{ name = "Eric Cooper" }]
+requires-python = ">=3.11"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries",
+]
+keywords = ["llm", "anthropic", "openai", "cost", "budget", "rate-limit", "observability"]
+dependencies = [
+    "pydantic>=2.0",
+]
+
+[project.optional-dependencies]
+# Google Cloud Storage state backend — for durable counter/state persistence
+# in production deployments on GCP.
+gcs = ["google-cloud-storage>=2.18"]
+
+# FastAPI adapters — the IP-rate-limit dependency factory and other
+# request-scoped helpers.
+fastapi = ["fastapi>=0.100"]
+
+# OpenTelemetry integration — span hooks, request-span context manager,
+# and the content-scrubbing exporter for per-session telemetry control.
+otel = [
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+]
+
+# Development / test extras.
+dev = [
+    "pytest>=8.0",
+    "pytest-cov>=4.0",
+    "ruff>=0.6",
+    # Deps needed to run the OTel and FastAPI test suites.
+    "opentelemetry-api>=1.27",
+    "opentelemetry-sdk>=1.27",
+    "fastapi>=0.100",
+    # Deps needed to run the event-log Pitchcraft-flavored tests.
+    "starlette>=0.35",
+    "httpx>=0.27",
+]
+
+[project.urls]
+Homepage = "https://github.com/ecoop/llm-guardrails"
+Repository = "https://github.com/ecoop/llm-guardrails"
+Issues = "https://github.com/ecoop/llm-guardrails/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/llm_guardrails"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "--tb=short"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
