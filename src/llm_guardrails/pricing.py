@@ -10,8 +10,15 @@ cost-math view, derived here so it can never drift from the registry.
 tolerated (they cost $0 rather than raising) and pinged once per process
 via `_warn_unpriced`.
 
-Rates as of 2026-08-01 — https://www.anthropic.com/pricing.
+Rates as of 2026-08-01:
+    Claude:  https://www.anthropic.com/pricing
+    Voyage:  https://docs.voyageai.com/docs/pricing
 All figures in USD per 1 million tokens.
+
+Voyage embedding and rerank models have no output / cache tokens —
+their rows set ``output``, ``cache_write``, and ``cache_read`` to
+0.0 so the existing ``_cost`` arithmetic works unchanged (input
+tokens × input rate + zeros for the other terms).
 """
 
 from __future__ import annotations
@@ -98,6 +105,103 @@ MODEL_PRICING: dict[str, dict] = {
         "output":      5.00,
         "cache_write": 1.25,
         "cache_read":  0.10,
+    },
+
+    # ── Voyage embeddings (current generation) ──
+    # Embeddings have no output/cache dimensions — those fields are 0
+    # so the same `_cost` arithmetic works for both providers. All rows
+    # come with a 200M-token free tier unless noted; free tokens are
+    # billing-side and not modeled here.
+    "voyage-4": {
+        "label": "Voyage 4",
+        "input":       0.06,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "voyage-4-large": {
+        "label": "Voyage 4 Large",
+        "input":       0.12,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "voyage-4-lite": {
+        "label": "Voyage 4 Lite",
+        "input":       0.02,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "voyage-context-4": {
+        "label": "Voyage Context 4",
+        "input":       0.18,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "voyage-code-3": {
+        "label": "Voyage Code 3",
+        "input":       0.18,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    # voyage-finance-2, voyage-law-2, voyage-code-2 share the same
+    # $0.12/1M rate but a smaller 50M free tier.
+    "voyage-finance-2": {
+        "label": "Voyage Finance 2",
+        "input":       0.12,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "voyage-law-2": {
+        "label": "Voyage Law 2",
+        "input":       0.12,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "voyage-code-2": {
+        "label": "Voyage Code 2",
+        "input":       0.12,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+
+    # ── Voyage rerank ──
+    # Batch API applies a 33% discount, billed via the batch endpoint;
+    # not modeled here since it's a request-shape distinction rather
+    # than a model-id one.
+    "rerank-2.5": {
+        "label": "Voyage Rerank 2.5",
+        "input":       0.05,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "rerank-2.5-lite": {
+        "label": "Voyage Rerank 2.5 Lite",
+        "input":       0.02,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "rerank-2": {
+        "label": "Voyage Rerank 2",
+        "input":       0.05,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "rerank-2-lite": {
+        "label": "Voyage Rerank 2 Lite",
+        "input":       0.02,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
     },
 }
 

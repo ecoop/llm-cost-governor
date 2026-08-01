@@ -46,24 +46,32 @@ def test_cost_unknown_model_returns_zero():
 
 def test_rate_table_covers_models_in_config():
     # Smoke: every key in RATES is a non-empty dict with the four required rates.
+    # `input` must be positive (every model bills for input); output / cache
+    # rates may be 0 for providers without those token dimensions — Voyage
+    # embeddings, for example, have no output or cache concept.
     required = {"input", "output", "cache_read", "cache_write"}
     for model, rates in RATES.items():
         assert required.issubset(rates.keys()), f"{model} missing rate keys"
-        assert all(v > 0 for v in rates.values()), f"{model} has non-positive rate"
+        assert rates["input"] > 0, f"{model} has non-positive input rate"
+        for k in ("output", "cache_read", "cache_write"):
+            assert rates[k] >= 0, f"{model} has negative {k} rate"
 
 
 # ── MODEL_PRICING registry / config.MODELS projection (#261) ────────────────────
 
 def test_model_pricing_rows_are_complete():
-    # Every registry row carries a label plus the four positive rates.
+    # Every registry row carries a label plus the four rates. Only `input`
+    # must be positive — output / cache rates can be 0 for providers that
+    # don't bill those token dimensions (Voyage embeddings + rerank).
     from llm_guardrails.pricing import MODEL_PRICING
 
     required = {"label", "input", "output", "cache_read", "cache_write"}
     for model, row in MODEL_PRICING.items():
         assert required.issubset(row.keys()), f"{model} missing fields"
         assert isinstance(row["label"], str) and row["label"], f"{model} bad label"
-        assert all(row[k] > 0 for k in ("input", "output", "cache_read", "cache_write")), \
-            f"{model} has a non-positive rate"
+        assert row["input"] > 0, f"{model} has non-positive input rate"
+        for k in ("output", "cache_read", "cache_write"):
+            assert row[k] >= 0, f"{model} has negative {k} rate"
 
 
 def test_cost_unknown_model_warns_operator_once(monkeypatch):
