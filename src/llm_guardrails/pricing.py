@@ -10,7 +10,7 @@ cost-math view, derived here so it can never drift from the registry.
 tolerated (they cost $0 rather than raising) and pinged once per process
 via `_warn_unpriced`.
 
-Rates as of 2026-06-06 — https://www.anthropic.com/pricing.
+Rates as of 2026-08-01 — https://www.anthropic.com/pricing.
 All figures in USD per 1 million tokens.
 """
 
@@ -28,6 +28,38 @@ _log = logging.getLogger(__name__)
 #   cache_read   — cost to read a cached entry         (0.10× input rate)
 
 MODEL_PRICING: dict[str, dict] = {
+    # ── Claude 5 family ──
+    # Fable 5: Anthropic's most capable widely released model. Priced above
+    # Opus tier for the most demanding long-horizon agentic and reasoning
+    # workloads.
+    "claude-fable-5": {
+        "label": "Fable 5",
+        "input":      10.00,
+        "output":     50.00,
+        "cache_write": 12.50,
+        "cache_read":   1.00,
+    },
+    # Opus 5: current-generation Opus, same $5/$25 sticker as the 4.x
+    # Opus line.
+    "claude-opus-5": {
+        "label": "Opus 5",
+        "input":       5.00,
+        "output":     25.00,
+        "cache_write": 6.25,
+        "cache_read":  0.50,
+    },
+    # Sonnet 5: current-generation Sonnet. Standard rate $3/$15; Anthropic
+    # is running an introductory $2/$10 through 2026-08-31. We price at the
+    # standard sticker — the intro discount is a billing-time credit and
+    # doesn't need to be reflected in pre-flight budget math.
+    "claude-sonnet-5": {
+        "label": "Sonnet 5",
+        "input":       3.00,
+        "output":     15.00,
+        "cache_write": 3.75,
+        "cache_read":  0.30,
+    },
+    # ── Claude 4.x family (still active) ──
     "claude-sonnet-4-6": {
         "label": "Sonnet 4.6",
         "input":       3.00,

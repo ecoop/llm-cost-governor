@@ -66,7 +66,7 @@ response, usage = guarded_call(
     provider="anthropic",
     hooks=hooks,
     tags={"stage": "drafter"},
-    model="claude-sonnet-4-6",
+    model="claude-sonnet-5",
     messages=[{"role": "user", "content": "Hello"}],
     max_tokens=512,
 )
@@ -125,7 +125,7 @@ record_usage(
 ## What's in / what's out
 
 **Included:**
-- Pricing for shipped Claude models (Sonnet 4.6, Opus 4.6/4.7/4.8, Haiku 4.5).
+- Pricing for currently-shipped Claude models — Fable 5, Opus 5, Sonnet 5, Opus 4.6/4.7/4.8, Sonnet 4.6, Haiku 4.5. Easy to extend for new models as they ship.
 - Rolling-window counter with configurable caps + durable persistence.
 - Per-IP rate limiter (framework-neutral core + FastAPI dependency factory).
 - Structured event log (stdout → any log aggregator).
