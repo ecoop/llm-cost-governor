@@ -40,7 +40,7 @@ import json
 import logging
 import sys
 from collections.abc import Callable, Mapping
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 
 from llm_guardrails.schemas import UsageRecord
@@ -93,7 +93,7 @@ def emit_llm_call(
         recipient = identity.get("recipient") if identity else None
         payload = {
             "event": "llm_call",
-            "ts": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "ts": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "session": session_id,
             "token_hash": _token_hash(token) if token else None,
             "recipient": recipient,

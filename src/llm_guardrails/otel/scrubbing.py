@@ -31,12 +31,11 @@ Why a wrapping exporter rather than a custom processor:
     around the ``ReadableSpan`` — same goal, different layer.
 """
 
-from typing import Sequence
+from collections.abc import Sequence
 
 from opentelemetry import baggage as otel_baggage
 from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor
 from opentelemetry.sdk.trace.export import SpanExporter, SpanExportResult
-
 
 # Attributes that carry prompt / response content. Stripped from spans
 # whose telemetry_mode is "metadata". Sourced from
@@ -81,15 +80,13 @@ class TelemetryModeStampingProcessor(SpanProcessor):
         if mode:
             span.set_attribute(self._mode_attr, mode)
 
-    def on_end(self, span: ReadableSpan) -> None:  # noqa: D401
+    def on_end(self, span: ReadableSpan) -> None:
         """No-op."""
-        pass
 
-    def shutdown(self) -> None:  # noqa: D401
+    def shutdown(self) -> None:
         """No-op."""
-        pass
 
-    def force_flush(self, timeout_millis: int = 30000) -> bool:  # noqa: D401
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
         """No-op; nothing buffered."""
         return True
 

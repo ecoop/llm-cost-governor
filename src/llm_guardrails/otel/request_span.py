@@ -38,7 +38,6 @@ from opentelemetry import baggage as otel_baggage
 from opentelemetry import context as otel_context
 from opentelemetry import trace
 
-
 # Default baggage key. Matches the historical Pitchcraft value so
 # existing sampler/exporter configurations continue to work when a
 # consumer supplies no override. Fresh integrations can pass their own.

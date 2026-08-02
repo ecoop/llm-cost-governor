@@ -6,7 +6,6 @@ import pytest
 from llm_guardrails.budget import BudgetExceeded, SessionBudget
 from llm_guardrails.pricing import RATES, _cost
 
-
 # ── _cost() ────────────────────────────────────────────────────────────────────
 
 def test_cost_sonnet_baseline():
@@ -78,7 +77,7 @@ def test_cost_unknown_model_warns_operator_once(monkeypatch):
     """Unknown model still costs $0, but pings the registered AlertSink once
     (per process) instead of silently undercounting."""
     import llm_guardrails.alerts as alerts_mod
-    import llm_guardrails.pricing as pricing
+    from llm_guardrails import pricing
 
     calls: list[tuple[str, str, str]] = []
 
@@ -101,7 +100,7 @@ def test_cost_unknown_model_warns_operator_once(monkeypatch):
 def test_cost_empty_model_does_not_alert(monkeypatch):
     """A usage dict missing `model` (→ "") must not spam the AlertSink."""
     import llm_guardrails.alerts as alerts_mod
-    import llm_guardrails.pricing as pricing
+    from llm_guardrails import pricing
 
     calls: list[tuple[str, str, str]] = []
 
