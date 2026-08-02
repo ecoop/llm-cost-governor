@@ -41,7 +41,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from llm_guardrails.alerts import CRITICAL, WARNING, alert
 from llm_guardrails.persistence import GcsBackedCounter
@@ -85,23 +85,23 @@ class CostCapExceeded(Exception):
 
 def _this_hour() -> str:
     """Current UTC hour bucket as ``YYYY-MM-DDTHH``."""
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H")
 
 
 def _today() -> str:
     """Current UTC date as ``YYYY-MM-DD``."""
-    return datetime.now(timezone.utc).date().isoformat()
+    return datetime.now(UTC).date().isoformat()
 
 
 def _week_of(d: date | None = None) -> str:
     """Monday (ISO week start) of ``d`` (default today, UTC) as ``YYYY-MM-DD``."""
-    d = d or datetime.now(timezone.utc).date()
+    d = d or datetime.now(UTC).date()
     return (d.fromordinal(d.toordinal() - d.weekday())).isoformat()
 
 
 def _now_iso() -> str:
     """Current UTC timestamp, second precision, as an ISO string."""
-    return datetime.now(timezone.utc).replace(microsecond=0).isoformat()
+    return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
 # ── Per-token accounting record ────────────────────────────────────────────────
@@ -331,8 +331,10 @@ class CostCounter(GcsBackedCounter):
             out.append((
                 CRITICAL,
                 "Demo daily spend cap reached",
-                f"Daily spend ${daily:.2f} reached the ${self._daily_cap_usd:.2f} "
-                f"cap — new calls are blocked until UTC midnight.",
+                (
+                    f"Daily spend ${daily:.2f} reached the ${self._daily_cap_usd:.2f} "
+                    f"cap — new calls are blocked until UTC midnight."
+                ),
             ))
 
         weekly = self._weekly.get(week, 0.0)
@@ -340,8 +342,10 @@ class CostCounter(GcsBackedCounter):
             out.append((
                 WARNING,
                 "Demo weekly spend at 80% of cap",
-                f"Weekly spend ${weekly:.2f} crossed 80% of the "
-                f"${self._weekly_cap_usd:.2f} weekly cap.",
+                (
+                    f"Weekly spend ${weekly:.2f} crossed 80% of the "
+                    f"${self._weekly_cap_usd:.2f} weekly cap."
+                ),
             ))
 
         hourly = self._hourly.get(hour, 0.0)
@@ -349,8 +353,10 @@ class CostCounter(GcsBackedCounter):
             out.append((
                 WARNING,
                 "Demo hourly spend cap reached",
-                f"Hourly spend ${hourly:.2f} reached the ${self._hourly_cap_usd:.2f} "
-                f"cap — resets at the top of the next hour.",
+                (
+                    f"Hourly spend ${hourly:.2f} reached the ${self._hourly_cap_usd:.2f} "
+                    f"cap — resets at the top of the next hour."
+                ),
             ))
 
         if token is not None:
@@ -364,8 +370,10 @@ class CostCounter(GcsBackedCounter):
                 out.append((
                     WARNING,
                     "Invite token weekly allowance reached",
-                    f"An invite token's weekly spend ${stat.usd_cumulative_week:.2f} "
-                    f"reached the ${self._per_token_cap_usd:.2f} per-token cap.",
+                    (
+                        f"An invite token's weekly spend ${stat.usd_cumulative_week:.2f} "
+                        f"reached the ${self._per_token_cap_usd:.2f} per-token cap."
+                    ),
                 ))
 
         return out
@@ -526,9 +534,11 @@ class CostCounter(GcsBackedCounter):
         return (
             WARNING,
             "Cost-counter GCS write failed",
-            "Persisting demo spend to the state blob failed; in-memory "
-            "totals are intact but won't survive a restart until a "
-            "write succeeds. Check the GCS bucket / IAM.",
+            (
+                "Persisting demo spend to the state blob failed; in-memory "
+                "totals are intact but won't survive a restart until a "
+                "write succeeds. Check the GCS bucket / IAM."
+            ),
         )
 
 
@@ -554,7 +564,7 @@ class WindowedCapHook:
 
     def __init__(
         self,
-        counter: "CostCounter",
+        counter: CostCounter,
         identity_provider: Callable[[], str | None] | None = None,
     ) -> None:
         self.counter = counter

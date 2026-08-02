@@ -8,7 +8,6 @@ attributes the hooks/request_span emit, not a mock.
 from __future__ import annotations
 
 import pytest
-
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -18,7 +17,6 @@ from llm_guardrails.otel.hooks import LangSmithMetadataHook, OTelSpanHook
 from llm_guardrails.otel.request_span import request_span
 from llm_guardrails.schemas import TokenEstimate, UsageRecord
 from llm_guardrails.wrapper import CallContext
-
 
 # ── Test infrastructure ──────────────────────────────────────────────────────
 
@@ -32,7 +30,7 @@ _shared_provider = TracerProvider()
 _shared_provider.add_span_processor(SimpleSpanProcessor(_shared_exporter))
 try:
     trace.set_tracer_provider(_shared_provider)
-except Exception:  # noqa: BLE001 — another test module may have already set one
+except Exception:  # noqa: BLE001, S110 — another test module may have already set one
     pass
 
 
@@ -54,13 +52,13 @@ def _ctx(model: str = "claude-sonnet-4-6", tags: dict | None = None) -> CallCont
 
 
 def _usage(model: str = "claude-sonnet-4-6", **overrides) -> UsageRecord:
-    defaults = dict(
-        provider="anthropic",
-        model=model,
-        input_tokens=1_000,
-        output_tokens=500,
-        cost_usd=0.01,
-    )
+    defaults = {
+        "provider": "anthropic",
+        "model": model,
+        "input_tokens": 1_000,
+        "output_tokens": 500,
+        "cost_usd": 0.01,
+    }
     defaults.update(overrides)
     return UsageRecord(**defaults)
 
@@ -196,9 +194,11 @@ def test_request_span_stamps_metadata_and_returns_active_span(span_exporter):
 def test_request_span_children_inherit_baggage_via_active_context(span_exporter):
     """Descendant spans opened inside request_span become its children."""
     tracer = trace.get_tracer("test_child")
-    with request_span("outer", telemetry_mode="full", tracer_name="test_reqspan_child") as outer:
-        with tracer.start_as_current_span("inner"):
-            pass  # inner closes here
+    with (
+        request_span("outer", telemetry_mode="full", tracer_name="test_reqspan_child") as outer,
+        tracer.start_as_current_span("inner"),
+    ):
+        pass  # inner closes here
 
     spans_by_name = {s.name: s for s in span_exporter.get_finished_spans()}
     assert set(spans_by_name) == {"outer", "inner"}

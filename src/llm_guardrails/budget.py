@@ -126,7 +126,7 @@ class ScopeBudgetHook:
         self,
         budget: SessionBudget,
         *,
-        message_template: "Callable[[SessionBudget], str] | None" = None,
+        message_template: Callable[[SessionBudget], str] | None = None,
     ) -> None:
         self.budget = budget
         self._message_template = message_template or _default_budget_message

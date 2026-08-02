@@ -7,13 +7,13 @@ spans or exporters required, just dict-attributes spans built with
 codepath we care about).
 """
 
+from collections.abc import Sequence
 from types import SimpleNamespace
-from typing import Sequence
 
 from llm_guardrails.otel.scrubbing import (
     CONTENT_ATTRIBUTES,
-    ContentScrubbingExporter,
     MODE_ATTR,
+    ContentScrubbingExporter,
     _ScrubbedSpan,
     scrub_span_content,
 )
