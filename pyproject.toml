@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-guardrails"
-version = "0.1.0"
+version = "0.2.0"
 description = "Composable pre-call and post-call hooks for LLM API calls: pricing, budgets, cost caps, rate limits, event log, observability."
 readme = "README.md"
 license = { file = "LICENSE" }
