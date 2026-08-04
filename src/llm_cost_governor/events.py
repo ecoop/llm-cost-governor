@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Eric Cooper. Licensed under MIT; see LICENSE.
 """Per-LLM-call event log — one structured JSON line per real LLM call.
 
-A companion to the rolling-window cost counter (``llm_governor.counters``).
+A companion to the rolling-window cost counter (``llm_cost_governor.counters``).
 The counter is sized for one job — fast cap enforcement on the hot path
 — and deliberately throws away per-call detail (per-model spend,
 prompt-cache hit rate, per-stage attribution, per-run reconstruction).
@@ -43,8 +43,8 @@ from collections.abc import Callable, Mapping
 from datetime import UTC, datetime
 from typing import Any
 
-from llm_governor.schemas import UsageRecord
-from llm_governor.wrapper import CallContext
+from llm_cost_governor.schemas import UsageRecord
+from llm_cost_governor.wrapper import CallContext
 
 _log = logging.getLogger(__name__)
 

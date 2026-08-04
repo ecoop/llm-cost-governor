@@ -1,6 +1,6 @@
 # Integration Guide
 
-How to adopt `llm-governor` in a Python application. This is the practical companion to the [README](../README.md) — the README explains *what* the library does; this doc explains *how* to wire it into your app.
+How to adopt `llm-cost-governor` in a Python application. This is the practical companion to the [README](../README.md) — the README explains *what* the library does; this doc explains *how* to wire it into your app.
 
 **Reference implementation:** [Pitchcraft](https://github.com/ecoop/pitchcraft) consumes this library in production. Its [`app_state.py`](https://github.com/ecoop/pitchcraft/blob/main/app_state.py) is the canonical adoption pattern; the file pointers throughout this doc are all in that repo.
 
@@ -11,13 +11,13 @@ How to adopt `llm-governor` in a Python application. This is the practical compa
 Core install:
 
 ```bash
-pip install "llm-governor @ git+https://github.com/ecoop/llm-governor@v0.3.0"
+pip install "llm-cost-governor @ git+https://github.com/ecoop/llm-cost-governor@v0.3.0"
 ```
 
 With optional integrations:
 
 ```bash
-pip install "llm-governor[gcs,fastapi,otel] @ git+https://github.com/ecoop/llm-governor@v0.3.0"
+pip install "llm-cost-governor[gcs,fastapi,otel] @ git+https://github.com/ecoop/llm-cost-governor@v0.3.0"
 ```
 
 The optional extras:
@@ -48,10 +48,10 @@ from pathlib import Path
 from typing import Callable, Optional
 from fastapi import Request
 
-from llm_governor.counters import CostCounter
-from llm_governor.ratelimit import IPRateLimiter
-from llm_governor.state import get_backend, StateBackend
-from llm_governor.fastapi_ext import make_enforce_ip_rate_limit
+from llm_cost_governor.counters import CostCounter
+from llm_cost_governor.ratelimit import IPRateLimiter
+from llm_cost_governor.state import get_backend, StateBackend
+from llm_cost_governor.fastapi_ext import make_enforce_ip_rate_limit
 
 cost_counter: Optional[CostCounter] = None
 ip_rate_limiter: Optional[IPRateLimiter] = None
@@ -208,11 +208,11 @@ Every hook satisfies the `Hook` Protocol (`pre(ctx)` + `post(ctx, usage)` method
 
 | Hook | Module | Purpose |
 |---|---|---|
-| `ScopeBudgetHook` | `llm_governor.budget` | Pre-flight budget enforcement per session/scope |
-| `WindowedCapHook` | `llm_governor.counters` | Rolling-window cost cap enforcement + alert |
-| `EventLogHook` | `llm_governor.events` | Structured JSON event per call (stdout) |
-| `OTelSpanHook` | `llm_governor.otel.hooks` | Per-call OTel span with cost + token attrs |
-| `LangSmithMetadataHook` | `llm_governor.otel.hooks` | Stamps LangSmith metadata from identity |
+| `ScopeBudgetHook` | `llm_cost_governor.budget` | Pre-flight budget enforcement per session/scope |
+| `WindowedCapHook` | `llm_cost_governor.counters` | Rolling-window cost cap enforcement + alert |
+| `EventLogHook` | `llm_cost_governor.events` | Structured JSON event per call (stdout) |
+| `OTelSpanHook` | `llm_cost_governor.otel.hooks` | Per-call OTel span with cost + token attrs |
+| `LangSmithMetadataHook` | `llm_cost_governor.otel.hooks` | Stamps LangSmith metadata from identity |
 
 Typical Pitchcraft chain:
 
@@ -251,16 +251,16 @@ Files worth skimming, in priority order:
 
 ### Pricing table is Claude-only
 
-`MODEL_PRICING` in `llm_governor.pricing` covers Anthropic Claude (Fable 5, Opus 5, Opus 4.6/4.7/4.8, Sonnet 5/4.6, Haiku 4.5). Voyage embeddings, OpenAI, Gemini — not included. A call to `usd_for_usage()` with an unrecognized model returns `$0` and fires a one-time "unpriced model" alert through the `AlertSink` protocol.
+`MODEL_PRICING` in `llm_cost_governor.pricing` covers Anthropic Claude (Fable 5, Opus 5, Opus 4.6/4.7/4.8, Sonnet 5/4.6, Haiku 4.5). Voyage embeddings, OpenAI, Gemini — not included. A call to `usd_for_usage()` with an unrecognized model returns `$0` and fires a one-time "unpriced model" alert through the `AlertSink` protocol.
 
 Two ways to handle in your app:
 
-- **Add pricing rows upstream** — small PR against [`src/llm_governor/pricing.py`](../src/llm_governor/pricing.py). Preferred; everyone benefits.
+- **Add pricing rows upstream** — small PR against [`src/llm_cost_governor/pricing.py`](../src/llm_cost_governor/pricing.py). Preferred; everyone benefits.
 - **Use `record_usage()` with a caller-computed cost** — the wrapper's post-hooks still fire and event-log the call correctly. Fine as a stopgap for models unlikely to be shared across consumers.
 
 ### Provider adapters ship only for Anthropic
 
-[`providers/anthropic.py`](../src/llm_governor/providers/anthropic.py) is the only shipped adapter. OpenAI, Voyage, Gemini adapters are ~30 lines each following the same shape but aren't in the box until someone needs them.
+[`providers/anthropic.py`](../src/llm_cost_governor/providers/anthropic.py) is the only shipped adapter. OpenAI, Voyage, Gemini adapters are ~30 lines each following the same shape but aren't in the box until someone needs them.
 
 ### Test suite has skipped tests from the DI refactor
 

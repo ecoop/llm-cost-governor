@@ -41,8 +41,8 @@ import logging
 import threading
 import time
 
-from llm_governor.alerts import alert
-from llm_governor.state import StateBackend
+from llm_cost_governor.alerts import alert
+from llm_cost_governor.state import StateBackend
 
 # How long the writer thread waits after a record before flushing, so a burst
 # of records coalesces into a single blob rewrite.

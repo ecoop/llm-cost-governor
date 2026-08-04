@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from llm_governor.schemas import TokenEstimate
+from llm_cost_governor.schemas import TokenEstimate
 
 # Conservative pre-flight input estimate used when the caller doesn't
 # supply their own — matches the pre-extraction `_INPUT_ESTIMATE` in

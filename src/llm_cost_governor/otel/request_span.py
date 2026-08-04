@@ -45,7 +45,7 @@ DEFAULT_BAGGAGE_KEY = "pitchcraft.telemetry_mode"
 
 # Default tracer name; only affects OTel introspection ("which library
 # emitted this span"), not span content.
-DEFAULT_TRACER_NAME = "llm_governor"
+DEFAULT_TRACER_NAME = "llm_cost_governor"
 
 
 @contextmanager

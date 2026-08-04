@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Eric Cooper. Licensed under MIT; see LICENSE.
-"""Tests for the llm-governor wrapper — HookChain, guarded_call, record_usage.
+"""Tests for the llm-cost-governor wrapper — HookChain, guarded_call, record_usage.
 
 The wrapper is provider-agnostic in principle; here it's exercised
 against a hand-rolled fake `Anthropic`-shaped client so the tests don't
@@ -22,8 +22,8 @@ from typing import Any
 
 import pytest
 
-from llm_governor.schemas import TokenEstimate, UsageRecord
-from llm_governor.wrapper import (
+from llm_cost_governor.schemas import TokenEstimate, UsageRecord
+from llm_cost_governor.wrapper import (
     CallContext,
     HookChain,
     TruncationError,

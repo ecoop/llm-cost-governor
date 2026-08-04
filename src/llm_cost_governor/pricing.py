@@ -235,7 +235,7 @@ def _warn_unpriced(model: str) -> None:
     )
     # Deferred import to keep the cost-math hot path free of the alerts
     # import graph until the first unpriced model is seen.
-    from llm_governor.alerts import WARNING, alert
+    from llm_cost_governor.alerts import WARNING, alert
 
     alert(
         WARNING,

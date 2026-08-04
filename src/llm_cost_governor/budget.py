@@ -13,9 +13,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from llm_governor.pricing import usd_for_usage
-from llm_governor.schemas import UsageRecord
-from llm_governor.wrapper import CallContext
+from llm_cost_governor.pricing import usd_for_usage
+from llm_cost_governor.schemas import UsageRecord
+from llm_cost_governor.wrapper import CallContext
 
 
 class BudgetExceeded(Exception):

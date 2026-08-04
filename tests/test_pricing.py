@@ -3,8 +3,8 @@
 
 import pytest
 
-from llm_governor.budget import BudgetExceeded, ScopeBudget
-from llm_governor.pricing import RATES, _cost
+from llm_cost_governor.budget import BudgetExceeded, ScopeBudget
+from llm_cost_governor.pricing import RATES, _cost
 
 # ── _cost() ────────────────────────────────────────────────────────────────────
 
@@ -62,7 +62,7 @@ def test_model_pricing_rows_are_complete():
     # Every registry row carries a label plus the four rates. Only `input`
     # must be positive — output / cache rates can be 0 for providers that
     # don't bill those token dimensions (Voyage embeddings + rerank).
-    from llm_governor.pricing import MODEL_PRICING
+    from llm_cost_governor.pricing import MODEL_PRICING
 
     required = {"label", "input", "output", "cache_read", "cache_write"}
     for model, row in MODEL_PRICING.items():
@@ -76,8 +76,8 @@ def test_model_pricing_rows_are_complete():
 def test_cost_unknown_model_warns_operator_once(monkeypatch):
     """Unknown model still costs $0, but pings the registered AlertSink once
     (per process) instead of silently undercounting."""
-    import llm_governor.alerts as alerts_mod
-    from llm_governor import pricing
+    import llm_cost_governor.alerts as alerts_mod
+    from llm_cost_governor import pricing
 
     calls: list[tuple[str, str, str]] = []
 
@@ -99,8 +99,8 @@ def test_cost_unknown_model_warns_operator_once(monkeypatch):
 
 def test_cost_empty_model_does_not_alert(monkeypatch):
     """A usage dict missing `model` (→ "") must not spam the AlertSink."""
-    import llm_governor.alerts as alerts_mod
-    from llm_governor import pricing
+    import llm_cost_governor.alerts as alerts_mod
+    from llm_cost_governor import pricing
 
     calls: list[tuple[str, str, str]] = []
 

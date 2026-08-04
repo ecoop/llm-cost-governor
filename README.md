@@ -1,4 +1,4 @@
-# llm-governor
+# llm-cost-governor
 
 Composable pre-call and post-call hooks for LLM API calls: **pricing, budgets, cost caps, rate limits, event log, observability**.
 
@@ -22,10 +22,10 @@ The library was extracted from [Pitchcraft](https://github.com/ecoop/pitchcraft)
 
 ```bash
 # Core install
-pip install "llm-governor @ git+https://github.com/ecoop/llm-governor@v0.3.0"
+pip install "llm-cost-governor @ git+https://github.com/ecoop/llm-cost-governor@v0.3.0"
 
 # With optional integrations
-pip install "llm-governor[fastapi,gcs,otel] @ git+https://github.com/ecoop/llm-governor@v0.3.0"
+pip install "llm-cost-governor[fastapi,gcs,otel] @ git+https://github.com/ecoop/llm-cost-governor@v0.3.0"
 ```
 
 Requires Python 3.11+. The core has just one dependency (pydantic v2); every integration is behind an optional extra so the install stays lean.
@@ -36,11 +36,11 @@ Requires Python 3.11+. The core has just one dependency (pydantic v2); every int
 
 ```python
 from anthropic import Anthropic
-from llm_governor.wrapper import guarded_call
-from llm_governor.budget import ScopeBudget, ScopeBudgetHook
-from llm_governor.counters import CostCounter, WindowedCapHook
-from llm_governor.events import EventLogHook
-from llm_governor.state import LocalFileBackend
+from llm_cost_governor.wrapper import guarded_call
+from llm_cost_governor.budget import ScopeBudget, ScopeBudgetHook
+from llm_cost_governor.counters import CostCounter, WindowedCapHook
+from llm_cost_governor.events import EventLogHook
+from llm_cost_governor.state import LocalFileBackend
 
 client = Anthropic()
 
@@ -84,7 +84,7 @@ That's it. Every hook's `pre` runs before the SDK call (aborts on `BudgetExceede
 
 ### The Hook chain
 
-`guarded_call(client, ..., hooks=[...])` runs each hook's `pre(ctx)` method before the SDK call and each `post(ctx, usage)` after. A hook is any object with those two methods and a `name` attribute — implement your own by satisfying the [`Hook`](src/llm_governor/wrapper.py) Protocol. The shipped hooks:
+`guarded_call(client, ..., hooks=[...])` runs each hook's `pre(ctx)` method before the SDK call and each `post(ctx, usage)` after. A hook is any object with those two methods and a `name` attribute — implement your own by satisfying the [`Hook`](src/llm_cost_governor/wrapper.py) Protocol. The shipped hooks:
 
 | Hook | pre | post |
 |---|---|---|
@@ -96,7 +96,7 @@ That's it. Every hook's `pre` runs before the SDK call (aborts on `BudgetExceede
 
 ### Providers
 
-`guarded_call(provider="anthropic", ...)` selects the adapter that knows how to invoke the SDK and normalize the response. The Anthropic adapter ships in-box; OpenAI and Voyage adapters slot in as new modules with a couple lines each. See [`providers/anthropic.py`](src/llm_governor/providers/anthropic.py) for the shape.
+`guarded_call(provider="anthropic", ...)` selects the adapter that knows how to invoke the SDK and normalize the response. The Anthropic adapter ships in-box; OpenAI and Voyage adapters slot in as new modules with a couple lines each. See [`providers/anthropic.py`](src/llm_cost_governor/providers/anthropic.py) for the shape.
 
 ### State backends
 
@@ -112,7 +112,7 @@ Add your own by implementing `read(name) -> str | None` and `write(name, text) -
 Voyage embeddings, batch APIs, vision — anything that doesn't fit the `guarded_call` shape. `record_usage()` runs only the **post** hooks, still gives you priced cost and event log, without wrapping the call:
 
 ```python
-from llm_governor.wrapper import record_usage
+from llm_cost_governor.wrapper import record_usage
 
 response = voyage_client.embed(texts=[...], model="voyage-3.5")
 record_usage(
@@ -147,8 +147,8 @@ record_usage(
 ## Development
 
 ```bash
-git clone https://github.com/ecoop/llm-governor
-cd llm-governor
+git clone https://github.com/ecoop/llm-cost-governor
+cd llm-cost-governor
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pytest
@@ -159,7 +159,7 @@ CI runs on Python 3.11, 3.12, 3.13 via [GitHub Actions](.github/workflows/ci.yml
 
 ## Versioning
 
-Currently `v0.3.0` — the release that renamed the package from `llm-guardrails` to `llm-governor`. Semver from `v1.0.0` onward; anything before is "shipped but pre-stable API — expect breaking changes."
+Currently `v0.3.0` — the release that renamed the package from `llm-guardrails` to `llm-cost-governor`. Semver from `v1.0.0` onward; anything before is "shipped but pre-stable API — expect breaking changes."
 
 ## Contributing
 

@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Eric Cooper. Licensed under MIT; see LICENSE.
-"""Optional OpenTelemetry integration for llm_governor.
+"""Optional OpenTelemetry integration for llm_cost_governor.
 
 Importing anything from this subpackage transitively imports
 ``opentelemetry-*``; consumers that don't want OTel just don't import

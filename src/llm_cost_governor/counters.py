@@ -26,7 +26,7 @@ Lifecycle:
     - ``counter.record(...)`` runs post-response; increments the
       in-memory windows, schedules a coalesced blob write, and emits
       operator alerts at cap-trip points via the
-      ``llm_governor.alerts`` seam.
+      ``llm_cost_governor.alerts`` seam.
 
 State model:
     In-memory dicts are the source of truth between writes. The state
@@ -43,12 +43,12 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
-from llm_governor.alerts import CRITICAL, WARNING, alert
-from llm_governor.persistence import GcsBackedCounter
-from llm_governor.pricing import usd_for_usage
-from llm_governor.schemas import UsageRecord
-from llm_governor.state import StateBackend
-from llm_governor.wrapper import CallContext
+from llm_cost_governor.alerts import CRITICAL, WARNING, alert
+from llm_cost_governor.persistence import GcsBackedCounter
+from llm_cost_governor.pricing import usd_for_usage
+from llm_cost_governor.schemas import UsageRecord
+from llm_cost_governor.state import StateBackend
+from llm_cost_governor.wrapper import CallContext
 
 _log = logging.getLogger(__name__)
 
@@ -259,7 +259,7 @@ class CostCounter(GcsBackedCounter):
 
         Args:
             usage: Anthropic ``usage``-shaped dict (see
-                llm_governor.pricing.usd_for_usage).
+                llm_cost_governor.pricing.usd_for_usage).
             token: The caller's identity, or None.
 
         Returns:
@@ -294,7 +294,7 @@ class CostCounter(GcsBackedCounter):
             pending = self._collect_alerts(hour, today, week, token)
 
         for level, title, body in pending:
-            # llm_governor.alerts.alert() is best-effort by contract (it
+            # llm_cost_governor.alerts.alert() is best-effort by contract (it
             # catches and logs sink failures), but we keep a belt-and-
             # suspenders try/except so a misbehaving stand-in patched into
             # this module's namespace can't interrupt the batch either.

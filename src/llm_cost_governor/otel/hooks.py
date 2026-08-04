@@ -27,8 +27,8 @@ from typing import Any
 
 from opentelemetry import trace
 
-from llm_governor.schemas import UsageRecord
-from llm_governor.wrapper import CallContext
+from llm_cost_governor.schemas import UsageRecord
+from llm_cost_governor.wrapper import CallContext
 
 
 class OTelSpanHook:
@@ -36,10 +36,10 @@ class OTelSpanHook:
 
     `pre` opens the span, stashes it in ``ctx.state["otel_span"]``, and
     sets the standard GenAI request attributes (provider, model) plus
-    each entry in ``ctx.tags`` as ``llm_governor.tag.<key>``.
+    each entry in ``ctx.tags`` as ``llm_cost_governor.tag.<key>``.
 
     `post` sets ``gen_ai.usage.*`` attributes for input/output/cache
-    tokens plus ``llm_governor.cost_usd`` from the priced UsageRecord,
+    tokens plus ``llm_cost_governor.cost_usd`` from the priced UsageRecord,
     then ends the span. If the span is missing (e.g. some earlier
     exception unwound state), `post` is a no-op — never raises into
     the caller.
@@ -47,7 +47,7 @@ class OTelSpanHook:
 
     name = "otel_span"
 
-    def __init__(self, tracer_name: str = "llm_governor") -> None:
+    def __init__(self, tracer_name: str = "llm_cost_governor") -> None:
         self._tracer = trace.get_tracer(tracer_name)
 
     def pre(self, ctx: CallContext) -> None:
@@ -56,7 +56,7 @@ class OTelSpanHook:
             attributes={
                 "gen_ai.system": ctx.provider,
                 "gen_ai.request.model": ctx.model,
-                **{f"llm_governor.tag.{k}": v for k, v in ctx.tags.items()},
+                **{f"llm_cost_governor.tag.{k}": v for k, v in ctx.tags.items()},
             },
         )
         ctx.state["otel_span"] = span
@@ -77,7 +77,7 @@ class OTelSpanHook:
                 "gen_ai.usage.cache_creation_input_tokens",
                 usage.cache_creation_input_tokens,
             )
-        span.set_attribute("llm_governor.cost_usd", usage.cost_usd)
+        span.set_attribute("llm_cost_governor.cost_usd", usage.cost_usd)
         span.end()
 
 

@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Eric Cooper. Licensed under MIT; see LICENSE.
-"""llm-governor — pricing, budgets, cost caps, rate limits, observability.
+"""llm-cost-governor — pricing, budgets, cost caps, rate limits, observability.
 
 A standalone, framework-agnostic library of composable pre-call and
 post-call hooks for LLM API calls. It carries no coupling to any host

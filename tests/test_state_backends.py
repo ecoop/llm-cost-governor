@@ -23,7 +23,7 @@ from pathlib import Path
 
 import pytest
 
-from llm_governor.state import (
+from llm_cost_governor.state import (
     GcsBackend,
     LocalFileBackend,
     StateBackend,
@@ -180,9 +180,9 @@ def test_arbitrary_class_satisfies_protocol():
     assert backend.read("k") == "v"
 
 
-def test_llm_governor_persistence_helpers_take_a_backend(tmp_path: Path):
-    """llm_governor.persistence.read_blob / write_blob take a backend arg."""
-    from llm_governor import persistence
+def test_llm_cost_governor_persistence_helpers_take_a_backend(tmp_path: Path):
+    """llm_cost_governor.persistence.read_blob / write_blob take a backend arg."""
+    from llm_cost_governor import persistence
 
     backend = LocalFileBackend(tmp_path)
     persistence.write_blob(backend, "b.json", "value")
