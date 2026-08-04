@@ -1,0 +1,39 @@
+name: Release
+
+# Publish to PyPI via OpenID Connect "trusted publishing" — no API token.
+# Triggered by pushing a version tag (e.g. `git tag v0.3.1 && git push origin v0.3.1`).
+# The tagged commit's pyproject.toml `version` is what gets published, so bump
+# it in the same commit you tag.
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write   # required for PyPI trusted publishing (OIDC)
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]" build
+
+      - name: Lint & test (gate the release)
+        run: |
+          ruff check src tests
+          pytest -q
+
+      - name: Build sdist + wheel
+        run: python -m build
+
+      - name: Publish to PyPI (trusted publishing)
+        uses: pypa/gh-action-pypi-publish@release/v1

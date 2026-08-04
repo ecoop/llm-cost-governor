@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-cost-governor"
-version = "0.3.0"
+version = "0.3.1"
 description = "Composable pre-call and post-call hooks for LLM API calls: pricing, budgets, cost caps, rate limits, event log, observability."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -20,7 +20,7 @@ classifiers = [
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Libraries",
 ]
-keywords = ["llm", "anthropic", "openai", "cost", "budget", "rate-limit", "observability"]
+keywords = ["llm", "anthropic", "openai", "voyage", "embeddings", "cost", "budget", "rate-limit", "observability"]
 dependencies = [
     "pydantic>=2.0",
 ]
