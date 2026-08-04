@@ -3,8 +3,8 @@ requires = ["hatchling>=1.24"]
 build-backend = "hatchling.build"
 
 [project]
-name = "llm-guardrails"
-version = "0.2.0"
+name = "llm-governor"
+version = "0.3.0"
 description = "Composable pre-call and post-call hooks for LLM API calls: pricing, budgets, cost caps, rate limits, event log, observability."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -56,12 +56,12 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/ecoop/llm-guardrails"
-Repository = "https://github.com/ecoop/llm-guardrails"
-Issues = "https://github.com/ecoop/llm-guardrails/issues"
+Homepage = "https://github.com/ecoop/llm-governor"
+Repository = "https://github.com/ecoop/llm-governor"
+Issues = "https://github.com/ecoop/llm-governor/issues"
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/llm_guardrails"]
+packages = ["src/llm_governor"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

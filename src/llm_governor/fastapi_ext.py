@@ -1,8 +1,8 @@
 # Copyright (c) 2026 Eric Cooper. Licensed under MIT; see LICENSE.
-"""FastAPI adapters for llm_guardrails — currently the IP-rate-limit dependency.
+"""FastAPI adapters for llm_governor — currently the IP-rate-limit dependency.
 
 Optional integration layer: kept in a separate module so the core
-guardrails package doesn't require FastAPI as a hard dependency.
+llm-governor package doesn't require FastAPI as a hard dependency.
 Import from here only when wiring an actual FastAPI app.
 
 Zero coupling to any host application: every value the adapters need
@@ -17,7 +17,7 @@ from collections.abc import Callable
 
 from fastapi import Request
 
-from llm_guardrails.ratelimit import IPRateLimiter
+from llm_governor.ratelimit import IPRateLimiter
 
 # ── Client-IP extraction ───────────────────────────────────────────────────────
 

@@ -1,7 +1,7 @@
 # Copyright (c) 2026 Eric Cooper. Licensed under MIT; see LICENSE.
 """Operator-alert seam — a swappable sink for cap-trip / write-failure notices.
 
-The `llm_guardrails` package needs to notify a human when things go
+The `llm_governor` package needs to notify a human when things go
 wrong (cap tripped, state write failed, unpriced model billed at $0),
 but the *how* — Discord webhook, PagerDuty, Slack, email, stdout — is
 an application concern. This module provides the seam:
@@ -80,7 +80,7 @@ def set_alert_sink(sink: AlertSink) -> None:
 def alert(level: str, title: str, body: str) -> None:
     """Route one alert to the current sink; never raises.
 
-    The library-side entry point every guardrails module calls. Any
+    The library-side entry point every llm-governor module calls. Any
     exception from the sink is caught and logged; the caller never
     observes a delivery failure. This is intentional: an alert delivery
     problem must never break the response that triggered the alert.

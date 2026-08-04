@@ -1,10 +1,10 @@
 # Copyright (c) 2026 Eric Cooper. Licensed under MIT; see LICENSE.
-"""Unit tests for pricing.py: cost math and SessionBudget enforcement."""
+"""Unit tests for pricing.py: cost math and ScopeBudget enforcement."""
 
 import pytest
 
-from llm_guardrails.budget import BudgetExceeded, SessionBudget
-from llm_guardrails.pricing import RATES, _cost
+from llm_governor.budget import BudgetExceeded, ScopeBudget
+from llm_governor.pricing import RATES, _cost
 
 # ── _cost() ────────────────────────────────────────────────────────────────────
 
@@ -62,7 +62,7 @@ def test_model_pricing_rows_are_complete():
     # Every registry row carries a label plus the four rates. Only `input`
     # must be positive — output / cache rates can be 0 for providers that
     # don't bill those token dimensions (Voyage embeddings + rerank).
-    from llm_guardrails.pricing import MODEL_PRICING
+    from llm_governor.pricing import MODEL_PRICING
 
     required = {"label", "input", "output", "cache_read", "cache_write"}
     for model, row in MODEL_PRICING.items():
@@ -76,8 +76,8 @@ def test_model_pricing_rows_are_complete():
 def test_cost_unknown_model_warns_operator_once(monkeypatch):
     """Unknown model still costs $0, but pings the registered AlertSink once
     (per process) instead of silently undercounting."""
-    import llm_guardrails.alerts as alerts_mod
-    from llm_guardrails import pricing
+    import llm_governor.alerts as alerts_mod
+    from llm_governor import pricing
 
     calls: list[tuple[str, str, str]] = []
 
@@ -99,8 +99,8 @@ def test_cost_unknown_model_warns_operator_once(monkeypatch):
 
 def test_cost_empty_model_does_not_alert(monkeypatch):
     """A usage dict missing `model` (→ "") must not spam the AlertSink."""
-    import llm_guardrails.alerts as alerts_mod
-    from llm_guardrails import pricing
+    import llm_governor.alerts as alerts_mod
+    from llm_governor import pricing
 
     calls: list[tuple[str, str, str]] = []
 
@@ -115,28 +115,28 @@ def test_cost_empty_model_does_not_alert(monkeypatch):
     assert calls == []
 
 
-# ── SessionBudget ──────────────────────────────────────────────────────────────
+# ── ScopeBudget ──────────────────────────────────────────────────────────────
 
 def test_session_budget_initial_state():
-    budget = SessionBudget(limit_usd=1.00)
+    budget = ScopeBudget(limit_usd=1.00)
     assert budget.spent_usd == 0.0
     assert budget.limit_usd == 1.00
 
 
 def test_would_exceed_false_when_within_limit():
-    budget = SessionBudget(limit_usd=1.00)
+    budget = ScopeBudget(limit_usd=1.00)
     # 1k input + 1k output on Sonnet ≈ $0.018 — well under $1.
-    assert not budget.would_exceed("claude-sonnet-4-6", 1_000, 1_000)
+    assert not budget.would_exceed(_cost("claude-sonnet-4-6", 1_000, 1_000))
 
 
 def test_would_exceed_true_when_over_limit():
-    budget = SessionBudget(limit_usd=0.01)
+    budget = ScopeBudget(limit_usd=0.01)
     # 1M output on Opus = $25 — far over $0.01.
-    assert budget.would_exceed("claude-opus-4-7", 100, 1_000_000)
+    assert budget.would_exceed(_cost("claude-opus-4-7", 100, 1_000_000))
 
 
 def test_record_increments_spent():
-    budget = SessionBudget(limit_usd=10.00)
+    budget = ScopeBudget(limit_usd=10.00)
     budget.record({
         "model": "claude-sonnet-4-6",
         "input_tokens": 1_000_000,
@@ -146,14 +146,14 @@ def test_record_increments_spent():
 
 
 def test_record_accumulates_across_calls():
-    budget = SessionBudget(limit_usd=10.00)
+    budget = ScopeBudget(limit_usd=10.00)
     budget.record({"model": "claude-sonnet-4-6", "input_tokens": 1_000_000, "output_tokens": 0})
     budget.record({"model": "claude-sonnet-4-6", "input_tokens": 1_000_000, "output_tokens": 0})
     assert budget.spent_usd == pytest.approx(6.00)
 
 
 def test_record_handles_cache_tokens():
-    budget = SessionBudget(limit_usd=10.00)
+    budget = ScopeBudget(limit_usd=10.00)
     budget.record({
         "model": "claude-sonnet-4-6",
         "input_tokens": 0,

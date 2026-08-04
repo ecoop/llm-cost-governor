@@ -29,7 +29,7 @@ Injection hook pattern: a pre-hook may stash a canned response in
 calling the provider. Used by Pitchcraft's FAKE_LLM mode to replay
 recorded responses without touching the API.
 
-Provider adapter (see `llm_guardrails/providers/`): supplies the
+Provider adapter (see `llm_governor/providers/`): supplies the
 `call` / `extract_usage` / `truncated` / `default_estimate` seams so
 the wrapper stays provider-agnostic.
 
@@ -47,9 +47,9 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-from llm_guardrails.pricing import usd_for_usage
-from llm_guardrails.providers import get_provider
-from llm_guardrails.schemas import TokenEstimate, UsageRecord
+from llm_governor.pricing import usd_for_usage
+from llm_governor.providers import get_provider
+from llm_governor.schemas import TokenEstimate, UsageRecord
 
 _log = logging.getLogger(__name__)
 
@@ -179,7 +179,7 @@ def guarded_call(
     Args:
         client: The provider SDK client (e.g. ``anthropic.Anthropic``).
         provider: The provider adapter to use — must match a key in
-            ``llm_guardrails.providers.get_provider``.
+            ``llm_governor.providers.get_provider``.
         hooks: Ordered sequence of hooks to run. Pre-hooks execute in
             registration order; a raise aborts the call. Post-hooks
             execute in registration order; failures are logged and

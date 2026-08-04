@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Eric Cooper. Licensed under MIT; see LICENSE.
-"""Wire-shape data classes for the guardrails library.
+"""Wire-shape data classes for the llm-governor library.
 
 Two lightweight pydantic models the wrapper + hooks share:
 

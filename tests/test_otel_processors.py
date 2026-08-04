@@ -10,7 +10,7 @@ codepath we care about).
 from collections.abc import Sequence
 from types import SimpleNamespace
 
-from llm_guardrails.otel.scrubbing import (
+from llm_governor.otel.scrubbing import (
     CONTENT_ATTRIBUTES,
     MODE_ATTR,
     ContentScrubbingExporter,

@@ -29,7 +29,7 @@ def get_provider(name: str) -> ModuleType:
             immediately rather than dropping to a silent default.
     """
     if name == "anthropic":
-        from llm_guardrails.providers import anthropic
+        from llm_governor.providers import anthropic
         return anthropic
     raise ValueError(
         f"Unknown provider {name!r}; expected one of: 'anthropic'."

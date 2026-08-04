@@ -1,24 +1,21 @@
 # Copyright (c) 2026 Eric Cooper. Licensed under MIT; see LICENSE.
 """Per-scope USD budget tracking and enforcement.
 
-`SessionBudget` (kept for source compatibility during the extraction
-refactor) tracks cumulative spend against a configurable USD ceiling and
-supports a pre-flight check that refuses a call when its estimated cost
-would push the scope over the limit. `BudgetExceeded` is the exception
-callers raise and catch.
-
-TODO(guardrails-extraction): rename `SessionBudget` → `ScopeBudget` and
-refactor `would_exceed` to take an estimated-cost float (with pricing
-lifted to the caller/hook layer) once the Hook chain lands.
+`ScopeBudget` tracks cumulative spend against a configurable USD ceiling
+and supports a pre-flight check that refuses a call when its estimated
+cost would push the scope over the limit. The budget itself is
+pricing-agnostic: `would_exceed` takes an already-estimated cost in USD,
+so the pricing lookup lives in the caller (see `ScopeBudgetHook`).
+`BudgetExceeded` is the exception callers raise and catch.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
 
-from llm_guardrails.pricing import _cost, usd_for_usage
-from llm_guardrails.schemas import UsageRecord
-from llm_guardrails.wrapper import CallContext
+from llm_governor.pricing import usd_for_usage
+from llm_governor.schemas import UsageRecord
+from llm_governor.wrapper import CallContext
 
 
 class BudgetExceeded(Exception):
@@ -29,21 +26,18 @@ class BudgetExceeded(Exception):
     """
 
 
-class SessionBudget:
+class ScopeBudget:
     """Tracks cumulative LLM spend within a scope and enforces a USD ceiling.
 
-    Currently used as a per-session ceiling in pitchcraft; the "session"
-    naming is legacy and will move to `ScopeBudget` once the Hook chain
-    refactor lands. The mechanism is scope-agnostic — it works for a
-    request, a CLI run, or any other bounded slice of time the caller
-    wants to cap.
+    The mechanism is scope-agnostic — it works for a session, a request,
+    a CLI run, or any other bounded slice of time the caller wants to cap.
 
     Usage::
 
-        budget = SessionBudget(limit_usd=1.00)
+        budget = ScopeBudget(limit_usd=1.00)
 
         # before each API call:
-        if budget.would_exceed(model, est_input, est_output):
+        if budget.would_exceed(estimated_cost_usd):
             raise BudgetExceeded(...)
 
         # after each successful call:
@@ -57,20 +51,20 @@ class SessionBudget:
         self._limit = limit_usd
         self._spent = 0.0
 
-    def would_exceed(self, model: str, est_input_tokens: int, est_output_tokens: int) -> bool:
+    def would_exceed(self, estimated_cost: float) -> bool:
         """Return True if this call's estimated cost would push over the limit.
 
         Args:
-            model: Model id (must match a `RATES` key).
-            est_input_tokens: Conservative pre-flight input estimate.
-            est_output_tokens: Typically the requested `max_tokens`.
+            estimated_cost: Pre-flight USD estimate for the next call. The
+                caller prices the call (e.g. via `pricing.usd_for_usage`)
+                and passes the resulting dollar figure — the budget stays
+                out of the pricing table.
 
         Returns:
             True iff `spent_usd + estimated_cost > limit_usd`. Callers
             should raise `BudgetExceeded` and abort the API call.
         """
-        estimated = _cost(model, est_input_tokens, est_output_tokens)
-        return (self._spent + estimated) > self._limit
+        return (self._spent + estimated_cost) > self._limit
 
     def record(self, usage_dict: dict) -> None:
         """Add actual token counts from a completed call to the running total.
@@ -79,7 +73,7 @@ class SessionBudget:
             usage_dict: Token-accounting dict. Expected keys: `model`,
                 `input_tokens`, `output_tokens`, `cache_read_input_tokens`,
                 `cache_creation_input_tokens`. Missing keys default to 0
-                or `""` (unknown model → 0 cost, see `_cost`).
+                or `""` (unknown model → 0 cost, see `pricing.usd_for_usage`).
         """
         self._spent += usd_for_usage(usage_dict)
 
@@ -94,7 +88,7 @@ class SessionBudget:
         return self._limit
 
 
-def _default_budget_message(budget: SessionBudget) -> str:
+def _default_budget_message(budget: ScopeBudget) -> str:
     """Default `BudgetExceeded` message when no template is supplied."""
     return (
         f"Scope budget ${budget.limit_usd:.2f} would be exceeded "
@@ -103,16 +97,16 @@ def _default_budget_message(budget: SessionBudget) -> str:
 
 
 class ScopeBudgetHook:
-    """`Hook` adapter that enforces a `SessionBudget` in a `guarded_call`.
+    """`Hook` adapter that enforces a `ScopeBudget` in a `guarded_call`.
 
-    `pre` runs the pre-flight `would_exceed` check using the call's
-    `TokenEstimate` and raises `BudgetExceeded` when the ceiling would
-    be crossed. `post` records the actual cost from the returned
-    `UsageRecord` against the running total.
+    `pre` prices the call from its `TokenEstimate` (via the public
+    `pricing.usd_for_usage`), runs the `would_exceed` check, and raises
+    `BudgetExceeded` when the ceiling would be crossed. `post` records the
+    actual cost from the returned `UsageRecord` against the running total.
 
     Register one instance per scope (per session, per request, per CLI
-    run): the hook holds a reference to a specific `SessionBudget`
-    object, so the scope lifetime tracks that object's lifetime.
+    run): the hook holds a reference to a specific `ScopeBudget` object,
+    so the scope lifetime tracks that object's lifetime.
 
     `message_template` lets callers override the user-facing message on
     the raised `BudgetExceeded` — Pitchcraft, for instance, ships a
@@ -124,19 +118,20 @@ class ScopeBudgetHook:
 
     def __init__(
         self,
-        budget: SessionBudget,
+        budget: ScopeBudget,
         *,
-        message_template: Callable[[SessionBudget], str] | None = None,
+        message_template: Callable[[ScopeBudget], str] | None = None,
     ) -> None:
         self.budget = budget
         self._message_template = message_template or _default_budget_message
 
     def pre(self, ctx: CallContext) -> None:
-        if self.budget.would_exceed(
-            ctx.model,
-            ctx.estimate.input_tokens,
-            ctx.estimate.output_tokens,
-        ):
+        estimated_cost = usd_for_usage({
+            "model": ctx.model,
+            "input_tokens": ctx.estimate.input_tokens,
+            "output_tokens": ctx.estimate.output_tokens,
+        })
+        if self.budget.would_exceed(estimated_cost):
             raise BudgetExceeded(self._message_template(self.budget))
 
     def post(self, ctx: CallContext, usage: UsageRecord) -> None:

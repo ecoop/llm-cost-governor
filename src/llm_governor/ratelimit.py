@@ -24,7 +24,7 @@ Single-instance assumption:
 
 Framework-neutral by design:
     This module owns the counter and the exception; the FastAPI
-    dependency + client-IP extractor live in ``llm_guardrails.fastapi_ext``
+    dependency + client-IP extractor live in ``llm_governor.fastapi_ext``
     so a non-FastAPI caller can use the limiter directly.
 """
 

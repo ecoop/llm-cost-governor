@@ -1,5 +1,5 @@
 # Copyright (c) 2026 Eric Cooper. Licensed under MIT; see LICENSE.
-"""Unit tests for llm_guardrails.otel.hooks + request_span.
+"""Unit tests for llm_governor.otel.hooks + request_span.
 
 Uses an in-memory OTel span exporter so tests observe the real span
 attributes the hooks/request_span emit, not a mock.
@@ -13,10 +13,10 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-from llm_guardrails.otel.hooks import LangSmithMetadataHook, OTelSpanHook
-from llm_guardrails.otel.request_span import request_span
-from llm_guardrails.schemas import TokenEstimate, UsageRecord
-from llm_guardrails.wrapper import CallContext
+from llm_governor.otel.hooks import LangSmithMetadataHook, OTelSpanHook
+from llm_governor.otel.request_span import request_span
+from llm_governor.schemas import TokenEstimate, UsageRecord
+from llm_governor.wrapper import CallContext
 
 # ── Test infrastructure ──────────────────────────────────────────────────────
 
@@ -82,13 +82,13 @@ def test_otelspanhook_opens_span_in_pre_and_closes_in_post(span_exporter):
     assert span.name == "llm.anthropic.call"
     assert span.attributes["gen_ai.system"] == "anthropic"
     assert span.attributes["gen_ai.request.model"] == "claude-sonnet-4-6"
-    # Tags passed through as llm_guardrails.tag.<key>.
-    assert span.attributes["llm_guardrails.tag.stage"] == "drafter"
-    assert span.attributes["llm_guardrails.tag.agent"] == "drafter_cv"
+    # Tags passed through as llm_governor.tag.<key>.
+    assert span.attributes["llm_governor.tag.stage"] == "drafter"
+    assert span.attributes["llm_governor.tag.agent"] == "drafter_cv"
     # Usage stamped from the priced UsageRecord.
     assert span.attributes["gen_ai.usage.input_tokens"] == 1_000
     assert span.attributes["gen_ai.usage.output_tokens"] == 500
-    assert span.attributes["llm_guardrails.cost_usd"] == pytest.approx(0.01)
+    assert span.attributes["llm_governor.cost_usd"] == pytest.approx(0.01)
 
 
 def test_otelspanhook_stamps_cache_attrs_only_when_non_none(span_exporter):

@@ -20,14 +20,14 @@ mirroring the cost_counter test style.
 
 import pytest
 
-# Reach through the module directly (not via `from llm_guardrails.ratelimit
+# Reach through the module directly (not via `from llm_governor.ratelimit
 # import time`) because module-attribute patches
 # (`monkeypatch.setattr(rl.time, "monotonic", …)`) only rebind names in the
 # module the attribute is looked up on, and `IPRateLimiter.check` looks up
 # `time` in this module.
-import llm_guardrails.ratelimit as rl
-from llm_guardrails.fastapi_ext import client_ip, make_enforce_ip_rate_limit
-from llm_guardrails.ratelimit import IPRateLimiter, RateLimitExceeded
+import llm_governor.ratelimit as rl
+from llm_governor.fastapi_ext import client_ip, make_enforce_ip_rate_limit
+from llm_governor.ratelimit import IPRateLimiter, RateLimitExceeded
 
 # ── helpers ───────────────────────────────────────────────────────────────────
 
