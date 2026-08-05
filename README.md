@@ -90,6 +90,7 @@ That's it. Every hook's `pre` runs before the SDK call (aborts on `BudgetExceede
 |---|---|---|
 | `ScopeBudgetHook` | raise `BudgetExceeded` if the pre-flight estimate would push over | record the actual cost against the budget |
 | `WindowedCapHook` | raise `CostCapExceeded` if a rolling window is already at cap | record cost + trigger alerts on cap crossings |
+| `ProviderTotalsHook` | no-op | add the call's cost to its provider's running total (the per-provider breakdown `CostCounter` aggregates away) |
 | `EventLogHook` | no-op | emit one structured JSON line to stdout |
 | `OTelSpanHook` (optional) | open a span with `gen_ai.request.*` attrs | close it with `gen_ai.usage.*` + cost attrs |
 | `LangSmithMetadataHook` (optional) | stamp `langsmith.metadata.*` from a caller-supplied identity dict | no-op |
@@ -130,6 +131,7 @@ record_usage(
 - Pricing for currently-shipped Claude models — Fable 5, Opus 5, Sonnet 5, Opus 4.6/4.7/4.8, Sonnet 4.6, Haiku 4.5. Easy to extend for new models as they ship.
 - Rolling-window counter with configurable caps + durable persistence.
 - `RollingWeekCounter` — a generic per-key, rolling-week cumulative counter with cap enforcement (strict or lenient) across one or more named dimensions; the reusable core behind app-specific caps like per-token/per-IP upload limits. Import from `llm_cost_governor.counters`.
+- `ProviderTotals` + `ProviderTotalsHook` — a per-provider cumulative-USD read-model (anthropic vs voyage vs …) for usage widgets and cost dashboards; the breakdown the windowed `CostCounter` aggregates away. In-memory by default, optionally persisted through a `StateBackend`. Import from `llm_cost_governor.provider_totals`.
 - Per-IP rate limiter (framework-neutral core + FastAPI dependency factory).
 - Structured event log (stdout → any log aggregator).
 - Provider adapter for Anthropic.
