@@ -129,6 +129,7 @@ record_usage(
 **Included:**
 - Pricing for currently-shipped Claude models — Fable 5, Opus 5, Sonnet 5, Opus 4.6/4.7/4.8, Sonnet 4.6, Haiku 4.5. Easy to extend for new models as they ship.
 - Rolling-window counter with configurable caps + durable persistence.
+- `RollingWeekCounter` — a generic per-key, rolling-week cumulative counter with cap enforcement (strict or lenient) across one or more named dimensions; the reusable core behind app-specific caps like per-token/per-IP upload limits. Import from `llm_cost_governor.counters`.
 - Per-IP rate limiter (framework-neutral core + FastAPI dependency factory).
 - Structured event log (stdout → any log aggregator).
 - Provider adapter for Anthropic.
