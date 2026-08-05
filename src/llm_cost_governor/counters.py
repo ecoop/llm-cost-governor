@@ -39,7 +39,7 @@ State model:
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 
@@ -584,3 +584,376 @@ class WindowedCapHook:
             },
             token=self.identity_provider(),
         )
+
+
+# ── Generic per-key rolling-week cap counter ────────────────────────────────────
+#
+# ``CostCounter`` above tracks spend in three *global* rolling windows plus a
+# per-token weekly window. That per-identity, rolling-week, cumulative-with-cap
+# pattern also shows up on its own — pitchcraft's cumulative upload-byte cap
+# (#245) reimplemented it verbatim modulo unit (bytes vs USD), enforcement
+# strictness, and labels. ``RollingWeekCounter`` factors that shared shape into
+# one configurable class so such use cases ride the upstream counter instead of
+# forking it. (``CostCounter``'s own per-token window predates this and is left
+# as-is; it *could* later be expressed in these terms, but its three global
+# windows and alert latching keep it a distinct class for now.)
+
+
+@dataclass
+class _KeyStat:
+    """Rolling-week cumulative amount for one key in one dimension.
+
+    ``amount_cumulative_week`` resets to zero when ``week_of`` rolls
+    over, so a dimension's cap is a weekly allowance rather than a
+    lifetime one. The numeric type of the amount follows what callers
+    ``record`` — ``int`` for byte counts, ``float`` for USD — because
+    the initial total is a bare ``0``.
+    """
+
+    amount_cumulative_week: float = 0
+    week_of: str = field(default_factory=_week_of)
+    first_seen: str = field(default_factory=_now_iso)
+    last_seen: str = field(default_factory=_now_iso)
+    event_count: int = 0
+
+
+def _default_cap_message(cap: float) -> str:
+    """Generic over-cap message; callers override for app-specific wording/units."""
+    return f"A weekly allowance ({cap:g}) has been reached. It resets weekly."
+
+
+@dataclass
+class CapDimension:
+    """One capped identity dimension of a :class:`RollingWeekCounter`.
+
+    A single counter can enforce several independent dimensions at once
+    — e.g. an upload cap keyed both per invite-token and per source-IP.
+    Each dimension carries its own weekly ceiling, its own
+    ``CostCapExceeded`` cap id, and its own user-facing message, so one
+    counter serves heterogeneous callers without the counter knowing any
+    app wording.
+
+    Args:
+        name: The keyword under which callers pass this dimension's key
+            to ``enforce`` / ``record`` / ``snapshot_for`` (e.g.
+            ``token`` → ``counter.record(n, token="abc")``). Also the
+            dimension's key in the persisted blob.
+        cap: The rolling-week ceiling for a single key in this dimension.
+        cap_id: The machine-readable ``CostCapExceeded.cap`` value raised
+            when this dimension trips (e.g. ``"upload_token"``), so the
+            API layer can branch without parsing the message.
+        message: Builds the user-facing exception message from this
+            dimension's ``cap``. Defaults to a generic weekly-allowance
+            line; callers pass their own for app-specific wording or
+            units (e.g. rendering a byte cap as MiB).
+        max_keys: Retention bound — the dimension's table is trimmed to
+            this many keys, oldest ``last_seen`` first, so the blob stays
+            small.
+    """
+
+    name: str
+    cap: float
+    cap_id: str
+    message: Callable[[float], str] = _default_cap_message
+    max_keys: int = 500
+
+
+class RollingWeekCounter(GcsBackedCounter):
+    """Generic per-key rolling-UTC-week cumulative counter with cap enforcement.
+
+    Generalizes the per-identity accounting shared by the spend counter
+    and pitchcraft's upload-byte cap: a numeric quantity accumulated per
+    caller key over a rolling UTC week, reset when the week rolls over,
+    persisted through ``GcsBackedCounter``. One counter enforces one or
+    more independent dimensions (see :class:`CapDimension`) — e.g.
+    per-token and per-IP — each with its own cap, cap id, and message.
+
+    Enforcement mode (constructor ``strict``):
+        strict (default): the incoming amount is known before the work
+            runs (bytes on the wire), so ``enforce`` blocks outright when
+            ``current + incoming > cap`` — the event that would cross the
+            cap is the one rejected, with no overshoot.
+        lenient: the amount is only knowable after the fact (a spend
+            estimate that's unreliable for cache-heavy prompts), so
+            ``enforce`` blocks only once a key is already at/over its cap
+            (``current >= cap``), tolerating a one-event overshoot — the
+            same tolerance ``CostCounter`` applies to spend.
+
+    Zero coupling to any host app: caps, labels, gate, backend, and blob
+    name are all constructor args (mirroring ``CostCounter``'s DI shape).
+
+    Args:
+        name: Counter label for logs / the writer-thread default name.
+        object_name: Filename/key for the persisted state blob.
+        backend: Where to persist state (any ``StateBackend``).
+        dimensions: The capped identity dimensions (at least one; names
+            must be unique).
+        writer_thread_name: Background-writer thread name (defaults to
+            ``"{name}-writer"``).
+        enabled: Master gate for enforcement + persistence. When False,
+            the counter still records in memory (local visibility) but
+            ``enforce`` is a no-op and nothing is written.
+        strict: Enforcement mode (see above).
+        log: Logger (defaults to this module's logger).
+        write_failure_alert: Optional ``(level, title, body)`` operator
+            alert emitted when persisting fails (default: log only).
+    """
+
+    def __init__(
+        self,
+        *,
+        name: str,
+        object_name: str,
+        backend: StateBackend,
+        dimensions: Sequence[CapDimension],
+        writer_thread_name: str | None = None,
+        enabled: bool = False,
+        strict: bool = True,
+        log: logging.Logger | None = None,
+        write_failure_alert: tuple[str, str, str] | None = None,
+    ) -> None:
+        dims = list(dimensions)
+        if not dims:
+            raise ValueError("RollingWeekCounter needs at least one CapDimension.")
+        names = [d.name for d in dims]
+        if len(set(names)) != len(names):
+            raise ValueError(f"CapDimension names must be unique; got {names}.")
+        super().__init__(
+            name=name,
+            object_name=object_name,
+            writer_thread_name=writer_thread_name or f"{name}-writer",
+            log=log or _log,
+        )
+        self._backend = backend
+        self._enabled = enabled
+        self._strict = strict
+        self._dimensions = dims
+        self._write_failure_alert_tuple = write_failure_alert
+        # One key→_KeyStat table per dimension, addressed by dimension name.
+        self._tables: dict[str, dict[str, _KeyStat]] = {d.name: {} for d in dims}
+
+    def load(self, *, backend_kind: str = "") -> None:  # type: ignore[override]
+        """Initialize state; read backend + start writer when ``enabled``.
+
+        Forwards to :meth:`GcsBackedCounter.load` with the counter's own
+        ``enabled`` gate, so consumers pass ``enabled`` once (at
+        construction) rather than repeating it at load time.
+        """
+        super().load(enabled=self._enabled, backend_kind=backend_kind)
+
+    def _check_keys(self, keys: dict) -> None:
+        """Reject kwargs that don't name a declared dimension (typo guard)."""
+        unknown = set(keys) - {d.name for d in self._dimensions}
+        if unknown:
+            raise TypeError(
+                f"Unknown dimension(s) {sorted(unknown)}; "
+                f"declared: {[d.name for d in self._dimensions]}."
+            )
+
+    # ── enforcement ──────────────────────────────────────────────────────────────
+
+    def enforce(self, incoming: float = 0, **keys: str | None) -> None:
+        """Pre-flight cap check across every dimension. No-op unless ``enabled``.
+
+        For each dimension whose key is supplied (and not None), compares
+        the key's already-recorded weekly total against the cap. Strict
+        mode blocks when ``current + incoming > cap``; lenient mode blocks
+        when ``current >= cap`` (``incoming`` ignored). Dimensions are
+        checked in declaration order, so the first one over the line names
+        the cap.
+
+        Args:
+            incoming: The amount this event will add (strict mode only).
+                E.g. an upload's byte count; ``0`` / omitted for
+                after-the-fact spend.
+            **keys: One value per dimension name (e.g. ``token=...``,
+                ``ip=...``). A dimension whose key is absent or None is
+                skipped.
+
+        Raises:
+            CostCapExceeded: with the tripping dimension's ``cap_id`` and
+                message.
+            TypeError: if a keyword doesn't name a declared dimension.
+        """
+        self._check_keys(keys)
+        if not self._enabled:
+            return
+
+        week = _week_of()
+        with self._lock:
+            currents = {
+                d.name: self._current(self._tables[d.name], keys.get(d.name), week)
+                for d in self._dimensions
+            }
+
+        for d in self._dimensions:
+            if keys.get(d.name) is None:
+                continue
+            current = currents[d.name]
+            over = (current + incoming > d.cap) if self._strict else (current >= d.cap)
+            if over:
+                raise CostCapExceeded(d.cap_id, d.message(d.cap))
+
+    @staticmethod
+    def _current(table: dict[str, _KeyStat], key: str | None, week: str) -> float:
+        """Current-week cumulative amount for ``key`` in ``table`` (0 if none/stale)."""
+        if key is None:
+            return 0
+        stat = table.get(key)
+        if stat is not None and stat.week_of == week:
+            return stat.amount_cumulative_week
+        return 0
+
+    # ── recording ──────────────────────────────────────────────────────────────
+
+    def record(self, amount: float, **keys: str | None) -> float:
+        """Add ``amount`` to every supplied key's rolling-week tally.
+
+        Runs in all modes (local visibility); only schedules a persist
+        write when ``enabled``. Call *after* the event is accepted,
+        mirroring ``CostCounter.record``. A dimension whose key is absent
+        or None is skipped.
+
+        Args:
+            amount: The numeric quantity to add (bytes, USD, tokens …).
+            **keys: One value per dimension name.
+
+        Returns:
+            ``amount`` (for call-site symmetry with ``CostCounter.record``).
+
+        Raises:
+            TypeError: if a keyword doesn't name a declared dimension.
+        """
+        self._check_keys(keys)
+        week = _week_of()
+        now = _now_iso()
+
+        with self._lock:
+            for d in self._dimensions:
+                self._add(self._tables[d.name], keys.get(d.name), amount, week, now)
+            self._trim()
+
+        self._schedule_write()
+        return amount
+
+    @staticmethod
+    def _add(
+        table: dict[str, _KeyStat], key: str | None, amount: float, week: str, now: str
+    ) -> None:
+        """Increment ``key``'s weekly tally, rolling over on a new week. Holds lock."""
+        if key is None:
+            return
+        stat = table.get(key)
+        if stat is None or stat.week_of != week:
+            stat = _KeyStat(week_of=week, first_seen=now)
+            table[key] = stat
+        stat.amount_cumulative_week += amount
+        stat.last_seen = now
+        stat.event_count += 1
+
+    # ── snapshots / serialization ──────────────────────────────────────────────
+
+    def snapshot_for(self, **keys: str | None) -> dict:
+        """Privacy-safe snapshot: caps + ONLY the given keys' own weekly totals.
+
+        The full per-key tables are keyed by credentials / network
+        addresses and must never reach the browser (mirrors
+        ``CostCounter.snapshot_for``). Returns each dimension's cap and,
+        for every supplied key, that key's own current-week cumulative
+        (``None`` when the key is absent / unknown / stale).
+
+        Returns:
+            ``{"caps": {dim: cap, ...},
+               "caller_weekly": {dim: amount_or_None, ...}}``.
+        """
+        self._check_keys(keys)
+        week = _week_of()
+        with self._lock:
+            caller: dict[str, float | None] = {}
+            for d in self._dimensions:
+                key = keys.get(d.name)
+                value: float | None = None
+                if key is not None:
+                    stat = self._tables[d.name].get(key)
+                    if stat is not None and stat.week_of == week:
+                        value = stat.amount_cumulative_week
+                caller[d.name] = value
+        return {
+            "caps": {d.name: d.cap for d in self._dimensions},
+            "caller_weekly": caller,
+        }
+
+    def to_dict(self) -> dict:
+        """Serialize current state to the persisted-blob schema."""
+        with self._lock:
+            return {
+                "schema_version": SCHEMA_VERSION,
+                "dimensions": {
+                    name: {k: _keystat_to_dict(s) for k, s in table.items()}
+                    for name, table in self._tables.items()
+                },
+            }
+
+    def from_dict(self, data: dict) -> None:
+        """Replace in-memory state from a deserialized blob (tolerant of gaps).
+
+        Only dimensions declared on this instance are loaded; blob entries
+        for unknown dimensions are ignored, and missing ones start empty.
+        """
+        with self._lock:
+            dims = data.get("dimensions", {})
+            for d in self._dimensions:
+                self._tables[d.name] = {
+                    k: _keystat_from_dict(s) for k, s in dims.get(d.name, {}).items()
+                }
+            self._trim()
+
+    # ── internals ──────────────────────────────────────────────────────────────
+
+    def _trim(self) -> None:
+        """Bound each dimension's table to its ``max_keys``. Caller holds the lock."""
+        for d in self._dimensions:
+            _trim_table(self._tables[d.name], d.max_keys)
+
+    # ── persistence hooks (GcsBackedCounter) ───────────────────────────────────
+
+    def _read_blob(self) -> str | None:
+        return self._backend.read(self._object_name)
+
+    def _write_blob(self, text: str) -> None:
+        self._backend.write(self._object_name, text)
+
+    def _write_failure_alert(self) -> tuple[str, str, str] | None:
+        return self._write_failure_alert_tuple
+
+
+# ── helpers ─────────────────────────────────────────────────────────────────────
+
+
+def _keystat_to_dict(s: _KeyStat) -> dict:
+    return {
+        "amount_cumulative_week": s.amount_cumulative_week,
+        "week_of": s.week_of,
+        "first_seen": s.first_seen,
+        "last_seen": s.last_seen,
+        "event_count": s.event_count,
+    }
+
+
+def _keystat_from_dict(s: dict) -> _KeyStat:
+    return _KeyStat(
+        amount_cumulative_week=s.get("amount_cumulative_week", 0) or 0,
+        week_of=s.get("week_of", _week_of()),
+        first_seen=s.get("first_seen", _now_iso()),
+        last_seen=s.get("last_seen", _now_iso()),
+        event_count=int(s.get("event_count", 0)),
+    )
+
+
+def _trim_table(table: dict[str, _KeyStat], max_size: int) -> None:
+    """Drop oldest (by ``last_seen``) records until ``table`` fits ``max_size``."""
+    if len(table) <= max_size:
+        return
+    ordered = sorted(table.items(), key=lambda kv: kv[1].last_seen)
+    for key, _ in ordered[: len(table) - max_size]:
+        del table[key]
