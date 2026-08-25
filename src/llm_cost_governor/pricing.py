@@ -28,6 +28,13 @@ import logging
 _log = logging.getLogger(__name__)
 
 # ── Model registry (single source of truth) ────────────────────────────────────
+# Keys are BARE model aliases (`claude-haiku-4-5`), never dated snapshots
+# (`claude-haiku-4-5-20251001`). Bare aliases are how callers are meant to
+# name current models — they float to the latest snapshot — so keying on
+# them is what makes `_cost` resolve for ordinary application code. A dated
+# key here silently bills that model at $0 (see #5). Enforced by
+# `test_model_pricing_keys_are_bare_aliases`.
+#
 # Each row: `label` (UI display) + four USD-per-1M-token rates:
 #   input        — uncached input tokens
 #   output       — output tokens
@@ -99,7 +106,10 @@ MODEL_PRICING: dict[str, dict] = {
         "cache_write": 6.25,
         "cache_read":  0.50,
     },
-    "claude-haiku-4-5-20251001": {
+    # Haiku 4.5: cheapest current-generation Claude. Keyed bare, like every
+    # other row — callers are meant to name the floating alias, not a dated
+    # snapshot (see test_model_pricing_keys_are_bare_aliases).
+    "claude-haiku-4-5": {
         "label": "Haiku 4.5",
         "input":       1.00,
         "output":      5.00,
