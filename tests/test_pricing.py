@@ -22,7 +22,7 @@ def test_cost_opus_47_baseline():
 def test_cost_haiku_baseline():
     # Haiku 4.5: $1/M input, $5/M output (was wrongly carrying retired
     # Haiku 3.5 rates of $0.80/$4.00 before #261).
-    assert _cost("claude-haiku-4-5-20251001", input_tok=1_000_000, output_tok=1_000_000) == pytest.approx(6.00)
+    assert _cost("claude-haiku-4-5", input_tok=1_000_000, output_tok=1_000_000) == pytest.approx(6.00)
 
 
 def test_cost_includes_cache_read_and_write():
@@ -71,6 +71,36 @@ def test_model_pricing_rows_are_complete():
         assert row["input"] > 0, f"{model} has non-positive input rate"
         for k in ("output", "cache_read", "cache_write"):
             assert row[k] >= 0, f"{model} has negative {k} rate"
+
+
+def test_model_pricing_keys_are_bare_aliases():
+    # Regression guard for #5. Keys must be bare aliases, never dated
+    # snapshots: a caller naming `claude-haiku-4-5` (the documented way to
+    # name a current model) got no rate match against a dated key, so its
+    # spend was billed at $0 and undercounted against ScopeBudget ceilings.
+    # The miss is quiet — a warn-once log line, not an error — so a budget
+    # cap can be under-enforced without anyone noticing.
+    import re
+
+    from llm_cost_governor.pricing import MODEL_PRICING
+
+    dated = [m for m in MODEL_PRICING if re.search(r"-20\d{6}$", m)]
+    assert not dated, (
+        f"dated snapshot keys in MODEL_PRICING: {dated}. Key the bare alias "
+        f"instead — a dated key bills that model at $0 for callers using the "
+        f"floating alias."
+    )
+
+
+def test_cost_resolves_bare_alias_for_every_model():
+    # The table is the contract: every advertised key must actually price.
+    # Guards against a row being present but unreachable through `_cost`.
+    from llm_cost_governor.pricing import MODEL_PRICING
+
+    for model in MODEL_PRICING:
+        assert _cost(model, input_tok=1_000_000, output_tok=0) > 0, (
+            f"{model} is in MODEL_PRICING but prices at $0"
+        )
 
 
 def test_cost_unknown_model_warns_operator_once(monkeypatch):
