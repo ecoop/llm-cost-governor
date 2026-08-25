@@ -1,6 +1,7 @@
 name: Release
 
-# Publish to PyPI via OpenID Connect "trusted publishing" — no API token.
+# Publish to PyPI via OpenID Connect "trusted publishing" — no API token,
+# then cut the matching GitHub Release so tags and Releases stay in step.
 # Triggered by pushing a version tag (e.g. `git tag v0.3.1 && git push origin v0.3.1`).
 # The tagged commit's pyproject.toml `version` is what gets published, so bump
 # it in the same commit you tag.
@@ -13,7 +14,7 @@ jobs:
   release:
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: write   # required to create the GitHub Release
       id-token: write   # required for PyPI trusted publishing (OIDC)
     steps:
       - uses: actions/checkout@v4
@@ -37,3 +38,15 @@ jobs:
 
       - name: Publish to PyPI (trusted publishing)
         uses: pypa/gh-action-pypi-publish@release/v1
+
+      # Runs only if the PyPI publish above succeeded, so a Release never
+      # advertises a version PyPI isn't serving. Notes are generated from the
+      # commits/PRs since the previous tag.
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
