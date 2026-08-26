@@ -2,9 +2,15 @@
 """Per-model pricing table and cost math.
 
 The model registry (`MODEL_PRICING`) is the single source of truth for
-every model's display label and four USD-per-1M-token rates (`input`,
-`output`, `cache_write`, `cache_read`). `RATES` is the label-stripped,
-cost-math view, derived here so it can never drift from the registry.
+every model's display label, `capability` (`chat` / `embedding` /
+`reranker`), and four USD-per-1M-token rates (`input`, `output`,
+`cache_write`, `cache_read`). `RATES` is the cost-math view, projecting
+exactly `RATE_KEYS` so descriptive fields can never leak into it, and
+derived here so it can never drift from the registry.
+
+`catalog()` returns the registry as typed `ModelRecord`s, optionally
+filtered by capability — so callers can ask for "the chat models"
+without re-deriving that from provider-name prefixes.
 
 `_cost` and `usd_for_usage` price completed calls. Unpriced models are
 tolerated (they cost $0 rather than raising) and pinged once per process
@@ -24,6 +30,8 @@ tokens × input rate + zeros for the other terms).
 from __future__ import annotations
 
 import logging
+
+from pydantic import BaseModel, ConfigDict
 
 _log = logging.getLogger(__name__)
 
@@ -48,6 +56,7 @@ MODEL_PRICING: dict[str, dict] = {
     # workloads.
     "claude-fable-5": {
         "label": "Fable 5",
+        "capability": "chat",
         "input":      10.00,
         "output":     50.00,
         "cache_write": 12.50,
@@ -57,6 +66,7 @@ MODEL_PRICING: dict[str, dict] = {
     # Opus line.
     "claude-opus-5": {
         "label": "Opus 5",
+        "capability": "chat",
         "input":       5.00,
         "output":     25.00,
         "cache_write": 6.25,
@@ -68,6 +78,7 @@ MODEL_PRICING: dict[str, dict] = {
     # doesn't need to be reflected in pre-flight budget math.
     "claude-sonnet-5": {
         "label": "Sonnet 5",
+        "capability": "chat",
         "input":       3.00,
         "output":     15.00,
         "cache_write": 3.75,
@@ -76,6 +87,7 @@ MODEL_PRICING: dict[str, dict] = {
     # ── Claude 4.x family (still active) ──
     "claude-sonnet-4-6": {
         "label": "Sonnet 4.6",
+        "capability": "chat",
         "input":       3.00,
         "output":     15.00,
         "cache_write": 3.75,
@@ -87,6 +99,7 @@ MODEL_PRICING: dict[str, dict] = {
     # structured/code content.
     "claude-opus-4-6": {
         "label": "Opus 4.6",
+        "capability": "chat",
         "input":       5.00,
         "output":     25.00,
         "cache_write": 6.25,
@@ -94,6 +107,7 @@ MODEL_PRICING: dict[str, dict] = {
     },
     "claude-opus-4-7": {
         "label": "Opus 4.7",
+        "capability": "chat",
         "input":       5.00,
         "output":     25.00,
         "cache_write": 6.25,
@@ -101,6 +115,7 @@ MODEL_PRICING: dict[str, dict] = {
     },
     "claude-opus-4-8": {
         "label": "Opus 4.8",
+        "capability": "chat",
         "input":       5.00,
         "output":     25.00,
         "cache_write": 6.25,
@@ -111,6 +126,7 @@ MODEL_PRICING: dict[str, dict] = {
     # snapshot (see test_model_pricing_keys_are_bare_aliases).
     "claude-haiku-4-5": {
         "label": "Haiku 4.5",
+        "capability": "chat",
         "input":       1.00,
         "output":      5.00,
         "cache_write": 1.25,
@@ -124,6 +140,7 @@ MODEL_PRICING: dict[str, dict] = {
     # billing-side and not modeled here.
     "voyage-4": {
         "label": "Voyage 4",
+        "capability": "embedding",
         "input":       0.06,
         "output":      0.00,
         "cache_write": 0.00,
@@ -131,6 +148,7 @@ MODEL_PRICING: dict[str, dict] = {
     },
     "voyage-4-large": {
         "label": "Voyage 4 Large",
+        "capability": "embedding",
         "input":       0.12,
         "output":      0.00,
         "cache_write": 0.00,
@@ -138,6 +156,7 @@ MODEL_PRICING: dict[str, dict] = {
     },
     "voyage-4-lite": {
         "label": "Voyage 4 Lite",
+        "capability": "embedding",
         "input":       0.02,
         "output":      0.00,
         "cache_write": 0.00,
@@ -145,6 +164,7 @@ MODEL_PRICING: dict[str, dict] = {
     },
     "voyage-context-4": {
         "label": "Voyage Context 4",
+        "capability": "embedding",
         "input":       0.18,
         "output":      0.00,
         "cache_write": 0.00,
@@ -152,6 +172,7 @@ MODEL_PRICING: dict[str, dict] = {
     },
     "voyage-code-3": {
         "label": "Voyage Code 3",
+        "capability": "embedding",
         "input":       0.18,
         "output":      0.00,
         "cache_write": 0.00,
@@ -161,6 +182,7 @@ MODEL_PRICING: dict[str, dict] = {
     # $0.12/1M rate but a smaller 50M free tier.
     "voyage-finance-2": {
         "label": "Voyage Finance 2",
+        "capability": "embedding",
         "input":       0.12,
         "output":      0.00,
         "cache_write": 0.00,
@@ -168,6 +190,7 @@ MODEL_PRICING: dict[str, dict] = {
     },
     "voyage-law-2": {
         "label": "Voyage Law 2",
+        "capability": "embedding",
         "input":       0.12,
         "output":      0.00,
         "cache_write": 0.00,
@@ -175,6 +198,7 @@ MODEL_PRICING: dict[str, dict] = {
     },
     "voyage-code-2": {
         "label": "Voyage Code 2",
+        "capability": "embedding",
         "input":       0.12,
         "output":      0.00,
         "cache_write": 0.00,
@@ -187,6 +211,7 @@ MODEL_PRICING: dict[str, dict] = {
     # than a model-id one.
     "rerank-2.5": {
         "label": "Voyage Rerank 2.5",
+        "capability": "reranker",
         "input":       0.05,
         "output":      0.00,
         "cache_write": 0.00,
@@ -194,6 +219,7 @@ MODEL_PRICING: dict[str, dict] = {
     },
     "rerank-2.5-lite": {
         "label": "Voyage Rerank 2.5 Lite",
+        "capability": "reranker",
         "input":       0.02,
         "output":      0.00,
         "cache_write": 0.00,
@@ -201,6 +227,7 @@ MODEL_PRICING: dict[str, dict] = {
     },
     "rerank-2": {
         "label": "Voyage Rerank 2",
+        "capability": "reranker",
         "input":       0.05,
         "output":      0.00,
         "cache_write": 0.00,
@@ -208,6 +235,7 @@ MODEL_PRICING: dict[str, dict] = {
     },
     "rerank-2-lite": {
         "label": "Voyage Rerank 2 Lite",
+        "capability": "reranker",
         "input":       0.02,
         "output":      0.00,
         "cache_write": 0.00,
@@ -215,13 +243,75 @@ MODEL_PRICING: dict[str, dict] = {
     },
 }
 
+# The four USD-per-1M-token rate keys. `RATES` projects exactly these — an
+# allowlist, not "everything except `label`", so descriptive fields added to
+# the registry (`capability`, and whatever comes next) can never leak into
+# the cost-math view as non-float values.
+RATE_KEYS: tuple[str, ...] = ("input", "output", "cache_write", "cache_read")
+
 # Cost-math view of the registry: model id → {input, output, cache_write,
-# cache_read}, with `label` stripped. Derived (not restated) so it can never
-# drift from MODEL_PRICING.
+# cache_read}. Derived (not restated) so it can never drift from
+# MODEL_PRICING.
 RATES: dict[str, dict[str, float]] = {
-    model_id: {k: v for k, v in row.items() if k != "label"}
+    model_id: {k: row[k] for k in RATE_KEYS}
     for model_id, row in MODEL_PRICING.items()
 }
+
+# Capability vocabulary. Open by design — new values are added here as the
+# catalog grows (`"vision"`, `"transcription"`, `"tts"`, …); consumers should
+# treat an unrecognized value as "not one I handle" rather than an error.
+CHAT = "chat"              # text in, text out; tool-use capable
+EMBEDDING = "embedding"    # text → vector
+RERANKER = "reranker"      # (query, docs) → ordered relevance scores
+
+CAPABILITIES: tuple[str, ...] = (CHAT, EMBEDDING, RERANKER)
+
+
+class ModelRecord(BaseModel):
+    """One model's static facts: identity, capability, and its rates.
+
+    The typed view of a `MODEL_PRICING` row, with the model id folded in
+    as `id`. Built by `catalog()`; `MODEL_PRICING` remains the source of
+    truth and the dict form stays available for callers that already
+    project it themselves.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    label: str
+    capability: str
+    input: float
+    output: float
+    cache_write: float
+    cache_read: float
+
+
+def catalog(capability: str | None = None) -> list[ModelRecord]:
+    """Every model in the registry, optionally filtered by capability.
+
+    Args:
+        capability: When given, return only models with this exact
+            `capability` value (e.g. `pricing.CHAT`). Unrecognized
+            values return an empty list rather than raising — callers
+            filtering on a capability this version doesn't know about
+            should see "no models", not a crash.
+
+    Returns:
+        `ModelRecord` list in registry order.
+
+    Example:
+        >>> [m.id for m in catalog(CHAT)][:2]
+        ['claude-fable-5', 'claude-opus-5']
+    """
+    records = [
+        ModelRecord(id=model_id, **row)
+        for model_id, row in MODEL_PRICING.items()
+    ]
+    if capability is None:
+        return records
+    return [m for m in records if m.capability == capability]
+
 
 # Model ids already flagged this process as having no rate row — gates the
 # warn-once alert/log in `_warn_unpriced`.
