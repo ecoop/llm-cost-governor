@@ -162,7 +162,7 @@ CI runs on Python 3.11, 3.12, 3.13 via [GitHub Actions](.github/workflows/ci.yml
 
 ## Versioning
 
-Currently `v0.3.4`. The `0.3.x` line renamed the package from `llm-guardrails` to `llm-cost-governor`. Semver from `v1.0.0` onward; anything before is "shipped but pre-stable API — expect breaking changes."
+Currently `v0.4.0`. The `0.3.x` line renamed the package from `llm-guardrails` to `llm-cost-governor`; `0.4.0` adds `capability` to every model record. Semver from `v1.0.0` onward; anything before is "shipped but pre-stable API — expect breaking changes."
 
 ## Contributing
 
@@ -174,4 +174,4 @@ MIT. See [LICENSE](LICENSE).
 
 ---
 
-_Last updated:_ 2026-08-25
+_Last updated:_ 2026-08-26

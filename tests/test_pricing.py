@@ -103,6 +103,79 @@ def test_cost_resolves_bare_alias_for_every_model():
         )
 
 
+# ── capability / catalog() (#6) ─────────────────────────────────────────────────
+
+def test_every_row_declares_a_known_capability():
+    # The taxonomy lives upstream so consumers don't re-derive it from
+    # provider-name prefixes. A row without a capability would silently
+    # vanish from every filtered catalog() call.
+    from llm_cost_governor.pricing import CAPABILITIES, MODEL_PRICING
+
+    for model, row in MODEL_PRICING.items():
+        assert "capability" in row, f"{model} has no capability"
+        assert row["capability"] in CAPABILITIES, (
+            f"{model} has unknown capability {row['capability']!r}; "
+            f"add it to CAPABILITIES if it is a new one"
+        )
+
+
+def test_rates_projects_only_rate_keys():
+    # Regression guard: RATES used to be "every key except `label`", so any
+    # descriptive field added to the registry leaked into the cost-math view
+    # as a non-float. It is now an explicit RATE_KEYS allowlist.
+    from llm_cost_governor.pricing import RATE_KEYS, RATES
+
+    for model, rates in RATES.items():
+        assert set(rates) == set(RATE_KEYS), f"{model} rate keys drifted: {set(rates)}"
+        for k, v in rates.items():
+            assert isinstance(v, float), f"{model}.{k} is {type(v).__name__}, not float"
+
+
+def test_catalog_covers_registry_and_filters_by_capability():
+    from llm_cost_governor.pricing import (
+        CAPABILITIES,
+        CHAT,
+        MODEL_PRICING,
+        catalog,
+    )
+
+    assert len(catalog()) == len(MODEL_PRICING)
+    assert [m.id for m in catalog()] == list(MODEL_PRICING)
+
+    # Filters partition the catalog — every model lands in exactly one bucket.
+    assert sum(len(catalog(c)) for c in CAPABILITIES) == len(MODEL_PRICING)
+    assert all(m.capability == CHAT for m in catalog(CHAT))
+    assert "claude-opus-5" in {m.id for m in catalog(CHAT)}
+
+
+def test_catalog_unknown_capability_returns_empty_not_error():
+    # A consumer filtering on a capability this version doesn't know about
+    # should see "no models", not a crash — the vocabulary is open.
+    from llm_cost_governor.pricing import catalog
+
+    assert catalog("vision") == []
+
+
+def test_catalog_records_carry_the_registry_rates():
+    from llm_cost_governor.pricing import MODEL_PRICING, RATE_KEYS, catalog
+
+    for m in catalog():
+        row = MODEL_PRICING[m.id]
+        assert m.label == row["label"]
+        for k in RATE_KEYS:
+            assert getattr(m, k) == row[k], f"{m.id}.{k} drifted from the registry"
+
+
+def test_embedding_and_reranker_models_are_not_chat():
+    # The motivating bug: Pitchcraft listed Voyage embedding + rerank models
+    # as valid options for its chat stages, because it iterated the catalog
+    # unfiltered. catalog(CHAT) must exclude them.
+    from llm_cost_governor.pricing import CHAT, catalog
+
+    chat_ids = {m.id for m in catalog(CHAT)}
+    assert not any(i.startswith(("voyage-", "rerank-")) for i in chat_ids)
+
+
 def test_cost_unknown_model_warns_operator_once(monkeypatch):
     """Unknown model still costs $0, but pings the registered AlertSink once
     (per process) instead of silently undercounting."""
