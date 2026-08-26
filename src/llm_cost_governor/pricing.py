@@ -313,6 +313,27 @@ def catalog(capability: str | None = None) -> list[ModelRecord]:
     return [m for m in records if m.capability == capability]
 
 
+class UnpricedModel(LookupError):
+    """Raised when a model has no rate row and the caller refuses to proceed.
+
+    `_cost` never raises this — post-flight pricing stays tolerant by
+    design, because the money is already spent and an accounting failure
+    must not break a response that succeeded. It is raised pre-flight by
+    `budget.RequirePricedModelHook`, where aborting is still free.
+    """
+
+
+def is_priced(model: str) -> bool:
+    """True when `model` has a rate row, and can therefore be costed.
+
+    The predicate behind pre-flight enforcement. Note this answers only
+    "can the token math run", not "is the resulting figure the complete
+    bill" — a priced model can still carry non-token line items the
+    library does not yet meter (server-side tool use; see issue #11).
+    """
+    return model in RATES
+
+
 # Model ids already flagged this process as having no rate row — gates the
 # warn-once alert/log in `_warn_unpriced`.
 _unpriced_warned: set[str] = set()
