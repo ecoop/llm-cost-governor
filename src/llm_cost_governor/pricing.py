@@ -28,12 +28,15 @@ Two different reasons a row carries zeros, worth keeping distinct:
   all — the dimension does not exist for them, so ``output``,
   ``cache_write``, and ``cache_read`` are 0.0 and the existing ``_cost``
   arithmetic works unchanged (input tokens × input rate + zeros).
-* OpenAI rows set the cache rates to 0.0 because this table does not
-  model OpenAI prompt caching *yet*, not because the dimension is
-  absent. That is correct only for uncached calls. Price a cached
-  OpenAI call today and its cache tokens cost $0 and undercount — the
-  same silent-undercount shape as issue #5. Enabling OpenAI caching
-  means filling those rates in first.
+* OpenAI rows carry real cache rates as of 0.4.3, now that the adapter
+  reports cached tokens. ``cache_read`` is OpenAI's discounted
+  cached-input rate (10% of input on models that support caching).
+  ``cache_write`` is 0.0 on most models because OpenAI's automatic
+  caching charges nothing to populate the cache — that zero means
+  "free", not "unmodelled". The three ``gpt-5.6-*`` models are the
+  exception and do list a cache-write fee.
+* The four ``-pro`` models list no cached-input rate at all: they do not
+  support prompt caching, so both cache fields are 0.0.
 """
 
 from __future__ import annotations
@@ -264,128 +267,128 @@ MODEL_PRICING: dict[str, dict] = {
         "capability": "chat",
         "input":        4.00,
         "output":      20.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  5.000,
+        "cache_read":   0.400,
     },
     "gpt-5.6-terra": {
         "label": "GPT-5.6 Terra",
         "capability": "chat",
         "input":        2.00,
         "output":      12.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  2.500,
+        "cache_read":   0.200,
     },
     "gpt-5.6-luna": {
         "label": "GPT-5.6 Luna",
         "capability": "chat",
         "input":        0.20,
         "output":       1.20,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.250,
+        "cache_read":   0.020,
     },
     "gpt-5.5": {
         "label": "GPT-5.5",
         "capability": "chat",
         "input":        5.00,
         "output":      30.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.500,
     },
     "gpt-5.5-pro": {
         "label": "GPT-5.5 Pro",
         "capability": "chat",
         "input":       30.00,
         "output":     180.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.000,
     },
     "gpt-5.4": {
         "label": "GPT-5.4",
         "capability": "chat",
         "input":        2.50,
         "output":      15.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.250,
     },
     "gpt-5.4-mini": {
         "label": "GPT-5.4 Mini",
         "capability": "chat",
         "input":        0.75,
         "output":       4.50,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.075,
     },
     "gpt-5.4-nano": {
         "label": "GPT-5.4 Nano",
         "capability": "chat",
         "input":        0.20,
         "output":       1.25,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.020,
     },
     "gpt-5.4-pro": {
         "label": "GPT-5.4 Pro",
         "capability": "chat",
         "input":       30.00,
         "output":     180.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.000,
     },
     "gpt-5.2": {
         "label": "GPT-5.2",
         "capability": "chat",
         "input":        1.75,
         "output":      14.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.175,
     },
     "gpt-5.2-pro": {
         "label": "GPT-5.2 Pro",
         "capability": "chat",
         "input":       21.00,
         "output":     168.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.000,
     },
     "gpt-5.1": {
         "label": "GPT-5.1",
         "capability": "chat",
         "input":        1.25,
         "output":      10.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.125,
     },
     "gpt-5": {
         "label": "GPT-5",
         "capability": "chat",
         "input":        1.25,
         "output":      10.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.125,
     },
     "gpt-5-mini": {
         "label": "GPT-5 Mini",
         "capability": "chat",
         "input":        0.25,
         "output":       2.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.025,
     },
     "gpt-5-nano": {
         "label": "GPT-5 Nano",
         "capability": "chat",
         "input":        0.05,
         "output":       0.40,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.005,
     },
     "gpt-5-pro": {
         "label": "GPT-5 Pro",
         "capability": "chat",
         "input":       15.00,
         "output":     120.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
+        "cache_write":  0.000,
+        "cache_read":   0.000,
     },
 
     # ── OpenAI embeddings (current generation) ──

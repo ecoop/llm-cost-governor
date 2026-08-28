@@ -196,21 +196,21 @@ def test_openai_rows_are_present_and_priced():
         assert _cost(model, input_tok=1_000_000, output_tok=0) > 0, f"{model} prices at $0"
 
 
-def test_openai_rows_have_no_cache_rates():
-    # Pins the scoping decision documented at the top of pricing.py: OpenAI
-    # prompt caching is NOT modelled here. Unlike the Voyage rows — which have
-    # no cache dimension at all — these zeros are only correct while callers
-    # make uncached calls. If someone fills in a cache rate, that assumption
-    # has changed and the module docstring plus any caller relying on it need
-    # revisiting, so this fails loudly rather than drifting.
+def test_openai_cache_rates_are_a_discount_or_absent():
+    # Superseded the 0.4.1 guard (which asserted these were all zero) once the
+    # adapter began reporting cached tokens. The invariant now: a model either
+    # supports caching, in which case cache_read is a real discount below the
+    # input rate, or it does not, in which case both cache fields are zero.
     from llm_cost_governor.pricing import MODEL_PRICING
 
-    for model in _openai_ids():
+    for model in [m for m in _openai_ids() if m.startswith("gpt-")]:
         row = MODEL_PRICING[model]
-        assert row["cache_write"] == 0.0 and row["cache_read"] == 0.0, (
-            f"{model} now carries cache rates — OpenAI caching is no longer "
-            f"unmodelled; update the pricing.py docstring and this test together"
+        cr = row["cache_read"]
+        assert cr == 0.0 or 0 < cr < row["input"], (
+            f"{model} cache_read={cr} is neither absent nor a discount on "
+            f"input={row['input']}"
         )
+        assert row["cache_write"] >= 0.0
 
 
 def test_openai_chat_and_embedding_models_are_tagged():
