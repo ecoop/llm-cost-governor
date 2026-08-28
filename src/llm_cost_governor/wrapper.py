@@ -247,6 +247,7 @@ def guarded_call(
         cache_read_input_tokens=tokens.get("cache_read_input_tokens"),
         cache_creation_input_tokens=tokens.get("cache_creation_input_tokens"),
         cost_usd=cost_usd,
+        server_tool_use=tokens.get("server_tool_use"),
         tags=dict(ctx.tags),
         ts=time.time(),
     )
@@ -275,6 +276,7 @@ def record_usage(
     output_tokens: int,
     cache_read_input_tokens: int | None = None,
     cache_creation_input_tokens: int | None = None,
+    server_tool_use: Mapping[str, int] | None = None,
     hooks: Sequence[Hook] = (),
     tags: Mapping[str, str] | None = None,
 ) -> UsageRecord:
@@ -294,6 +296,11 @@ def record_usage(
         cache_read_input_tokens / cache_creation_input_tokens: Optional.
             Set to ``None`` when the provider doesn't expose them; ``0``
             when the provider reported zero.
+        server_tool_use: Provider-reported non-token billing counts for
+            the call (e.g. ``{"web_search_requests": 2}``). Priced by
+            ``pricing.server_tool_cost`` and added to ``cost_usd``, so
+            spend billed outside the token dimension still reaches every
+            budget and cap. Omit when the call used no server-side tools.
         hooks: Post-hooks to run. Same protocol as ``guarded_call`` —
             failures are logged and swallowed.
         tags: Opaque caller annotations, forwarded to ``UsageRecord.tags``.
@@ -306,6 +313,7 @@ def record_usage(
         "output_tokens": output_tokens,
         "cache_read_input_tokens": cache_read_input_tokens,
         "cache_creation_input_tokens": cache_creation_input_tokens,
+        "server_tool_use": dict(server_tool_use) if server_tool_use else None,
     }
     cost_usd = usd_for_usage({**tokens, "model": model})
 
@@ -317,6 +325,7 @@ def record_usage(
         cache_read_input_tokens=cache_read_input_tokens,
         cache_creation_input_tokens=cache_creation_input_tokens,
         cost_usd=cost_usd,
+        server_tool_use=tokens["server_tool_use"],
         tags=dict(tags or {}),
         ts=time.time(),
     )
