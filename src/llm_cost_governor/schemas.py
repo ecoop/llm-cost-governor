@@ -45,6 +45,12 @@ class UsageRecord(BaseModel):
     OpenAI, Voyage), while ``0`` means "the provider reported zero" —
     distinguishing them matters for accurate accounting downstream.
 
+    ``server_tool_use`` carries the provider's non-token billing counts
+    for the call (e.g. ``{"web_search_requests": 2}``) — ``None`` when the
+    call used no server-side tools. It is reported separately from the
+    token fields because it is billed in a different unit; ``cost_usd``
+    already includes its priced portion.
+
     The ``tags`` dict is the caller's opaque annotation space (stage,
     agent, route, qa_id, whatever). Hooks that need to key on caller
     context read from ``tags`` rather than requiring the library to
@@ -60,5 +66,6 @@ class UsageRecord(BaseModel):
     cache_read_input_tokens: int | None = None
     cache_creation_input_tokens: int | None = None
     cost_usd: float
+    server_tool_use: dict[str, int] | None = None
     tags: dict[str, str] = Field(default_factory=dict)
     ts: float = Field(default_factory=time.time)

@@ -48,7 +48,31 @@ def extract_usage(response: Any) -> dict:
         "output_tokens": u.output_tokens,
         "cache_read_input_tokens": getattr(u, "cache_read_input_tokens", None),
         "cache_creation_input_tokens": getattr(u, "cache_creation_input_tokens", None),
+        "server_tool_use": _server_tool_use(u),
     }
+
+
+def _server_tool_use(usage: Any) -> dict[str, int] | None:
+    """Normalize ``usage.server_tool_use`` to a plain ``{key: count}`` dict.
+
+    Anthropic bills some server-side tool use on top of tokens (web search
+    at $10/1,000 searches) and reports it here, alongside the token counts.
+    Returned as a plain dict rather than the SDK object so nothing
+    downstream depends on the SDK's shape.
+
+    Returns None when the call made no server-tool use, matching the
+    cache fields' "provider didn't report this" convention.
+    """
+    stu = getattr(usage, "server_tool_use", None)
+    if stu is None:
+        return None
+    if not isinstance(stu, dict):
+        stu = getattr(stu, "__dict__", None) or {
+            k: getattr(stu, k) for k in dir(stu)
+            if k.endswith("_requests") and not k.startswith("_")
+        }
+    counts = {k: int(v) for k, v in stu.items() if isinstance(v, int | float)}
+    return counts or None
 
 
 def truncated(response: Any) -> bool:

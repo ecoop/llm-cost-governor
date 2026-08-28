@@ -39,6 +39,7 @@ Two different reasons a row carries zeros, worth keeping distinct:
 from __future__ import annotations
 
 import logging
+from collections.abc import Mapping
 
 from pydantic import BaseModel, ConfigDict
 
@@ -498,6 +499,85 @@ def is_priced(model: str) -> bool:
     return model in RATES
 
 
+# ── Server-side tool pricing ───────────────────────────────────────────────────
+# Anthropic bills some server-side tool use *in addition to* tokens, and
+# reports it as a sibling of the token counts on the same call:
+#
+#     "usage": {"input_tokens": 105, "output_tokens": 6039,
+#               "server_tool_use": {"web_search_requests": 1}}
+#
+# Rates as of 2026-08-28 — https://platform.claude.com/docs/en/about-claude/pricing
+#
+# Keys map to USD *per request*. A key absent from this table is not priced;
+# `_warn_unpriced_tool` fires once for it rather than letting it cost $0
+# silently, which is the failure this whole seam exists to avoid.
+SERVER_TOOL_PRICING: dict[str, float] = {
+    # Web search: $10 per 1,000 searches. Each search counts as one use
+    # regardless of how many results come back; failed searches aren't billed.
+    "web_search_requests": 0.010,
+    # Web fetch: no additional charge — you pay only for the fetched content
+    # as input tokens, which the token math already covers. Priced at 0.0
+    # explicitly so it reads as "known to be free", not "forgotten".
+    "web_fetch_requests": 0.0,
+    # NOT here, deliberately: `code_execution_requests`. Code execution is
+    # billed by container-hour ($0.05/hour, 1,550 free hours/month, 5-minute
+    # minimum), not per request — a per-request rate would be fiction. It
+    # warns instead, so the gap is visible rather than silently $0.
+}
+
+# Server-tool keys already flagged this process as unpriced.
+_unpriced_tools_warned: set[str] = set()
+
+
+def _warn_unpriced_tool(key: str) -> None:
+    """Warn once per process that server-tool `key` has no rate.
+
+    Mirrors `_warn_unpriced` for the non-token billing dimension: the
+    library would otherwise count a real, billed line item as $0 with no
+    signal at all.
+    """
+    if key in _unpriced_tools_warned:
+        return
+    _unpriced_tools_warned.add(key)
+    _log.warning(
+        "pricing: server tool %r has no entry in SERVER_TOOL_PRICING; its "
+        "spend is counted as $0 and undercounted against budgets and caps.",
+        key,
+    )
+    from llm_cost_governor.alerts import WARNING, alert
+
+    alert(
+        WARNING,
+        "Unpriced server tool billed at $0",
+        f"Server tool {key!r} has no entry in pricing.SERVER_TOOL_PRICING, so "
+        f"its spend is counted as $0. Add a rate, or price it out of band.",
+    )
+
+
+def server_tool_cost(server_tool_use: Mapping[str, int] | None) -> float:
+    """USD for the server-side tool use reported on one call.
+
+    Args:
+        server_tool_use: The provider's ``usage.server_tool_use`` mapping
+            (request counts by tool key), or None when the call made no
+            server-tool use.
+
+    Returns:
+        Cost in USD, on top of whatever the token math returns. Unpriced
+        keys contribute 0.0 and fire `_warn_unpriced_tool` once.
+    """
+    if not server_tool_use:
+        return 0.0
+    total = 0.0
+    for key, count in server_tool_use.items():
+        rate = SERVER_TOOL_PRICING.get(key)
+        if rate is None:
+            _warn_unpriced_tool(key)
+            continue
+        total += (count or 0) * rate
+    return total
+
+
 # Model ids already flagged this process as having no rate row — gates the
 # warn-once alert/log in `_warn_unpriced`.
 _unpriced_warned: set[str] = set()
@@ -577,13 +657,16 @@ def usd_for_usage(usage: dict) -> float:
             Missing keys default to 0 / unknown-model (→ $0, see `_cost`).
 
     Returns:
-        Cost in USD.
+        Cost in USD — token cost plus any server-side tool use reported
+        under ``server_tool_use``. Folding the two together here is what
+        makes non-token spend visible to every budget, cap, and total
+        downstream, all of which price through this one function.
     """
     # `or 0` coerces both missing keys and explicit `None` values (from
     # providers that don't expose a cache split, e.g. OpenAI / Voyage) —
     # None survives .get()'s default only for the missing-key case, so
     # both branches need to collapse to 0 for the arithmetic in _cost.
-    return _cost(
+    return server_tool_cost(usage.get("server_tool_use")) + _cost(
         usage.get("model", ""),
         input_tok       = usage.get("input_tokens") or 0,
         output_tok      = usage.get("output_tokens") or 0,
