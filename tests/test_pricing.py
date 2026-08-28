@@ -176,6 +176,62 @@ def test_embedding_and_reranker_models_are_not_chat():
     assert not any(i.startswith(("voyage-", "rerank-")) for i in chat_ids)
 
 
+# ── OpenAI rows ────────────────────────────────────────────────────────────────
+
+_OPENAI_PREFIXES = ("gpt-", "text-embedding-")
+
+
+def _openai_ids():
+    from llm_cost_governor.pricing import MODEL_PRICING
+
+    return [m for m in MODEL_PRICING if m.startswith(_OPENAI_PREFIXES)]
+
+
+def test_openai_rows_are_present_and_priced():
+    from llm_cost_governor.pricing import _cost
+
+    ids = _openai_ids()
+    assert ids, "no OpenAI rows in the registry"
+    for model in ids:
+        assert _cost(model, input_tok=1_000_000, output_tok=0) > 0, f"{model} prices at $0"
+
+
+def test_openai_rows_have_no_cache_rates():
+    # Pins the scoping decision documented at the top of pricing.py: OpenAI
+    # prompt caching is NOT modelled here. Unlike the Voyage rows — which have
+    # no cache dimension at all — these zeros are only correct while callers
+    # make uncached calls. If someone fills in a cache rate, that assumption
+    # has changed and the module docstring plus any caller relying on it need
+    # revisiting, so this fails loudly rather than drifting.
+    from llm_cost_governor.pricing import MODEL_PRICING
+
+    for model in _openai_ids():
+        row = MODEL_PRICING[model]
+        assert row["cache_write"] == 0.0 and row["cache_read"] == 0.0, (
+            f"{model} now carries cache rates — OpenAI caching is no longer "
+            f"unmodelled; update the pricing.py docstring and this test together"
+        )
+
+
+def test_openai_chat_and_embedding_models_are_tagged():
+    from llm_cost_governor.pricing import CHAT, EMBEDDING, MODEL_PRICING
+
+    for model in _openai_ids():
+        cap = MODEL_PRICING[model]["capability"]
+        expected = EMBEDDING if model.startswith("text-embedding-") else CHAT
+        assert cap == expected, f"{model} tagged {cap!r}, expected {expected!r}"
+
+
+def test_openai_models_are_reachable_through_the_priced_gate():
+    # The pre-flight gate (#10) refuses unpriced models, so a missing row is
+    # now a hard failure rather than a silent $0. Every OpenAI id we advertise
+    # must pass it.
+    from llm_cost_governor.pricing import is_priced
+
+    for model in _openai_ids():
+        assert is_priced(model), f"{model} would be refused by RequirePricedModelHook"
+
+
 def test_cost_unknown_model_warns_operator_once(monkeypatch):
     """Unknown model still costs $0, but pings the registered AlertSink once
     (per process) instead of silently undercounting."""
