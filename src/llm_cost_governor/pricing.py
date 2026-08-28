@@ -16,15 +16,24 @@ without re-deriving that from provider-name prefixes.
 tolerated (they cost $0 rather than raising) and pinged once per process
 via `_warn_unpriced`.
 
-Rates as of 2026-08-01:
+Rates as of 2026-08-01 (Claude, Voyage) and 2026-08-27 (OpenAI):
     Claude:  https://www.anthropic.com/pricing
     Voyage:  https://docs.voyageai.com/docs/pricing
+    OpenAI:  https://developers.openai.com/api/docs/pricing
 All figures in USD per 1 million tokens.
 
-Voyage embedding and rerank models have no output / cache tokens —
-their rows set ``output``, ``cache_write``, and ``cache_read`` to
-0.0 so the existing ``_cost`` arithmetic works unchanged (input
-tokens × input rate + zeros for the other terms).
+Two different reasons a row carries zeros, worth keeping distinct:
+
+* Voyage embedding and rerank models have no output / cache tokens at
+  all — the dimension does not exist for them, so ``output``,
+  ``cache_write``, and ``cache_read`` are 0.0 and the existing ``_cost``
+  arithmetic works unchanged (input tokens × input rate + zeros).
+* OpenAI rows set the cache rates to 0.0 because this table does not
+  model OpenAI prompt caching *yet*, not because the dimension is
+  absent. That is correct only for uncached calls. Price a cached
+  OpenAI call today and its cache tokens cost $0 and undercount — the
+  same silent-undercount shape as issue #5. Enabling OpenAI caching
+  means filling those rates in first.
 """
 
 from __future__ import annotations
@@ -237,6 +246,161 @@ MODEL_PRICING: dict[str, dict] = {
         "label": "Voyage Rerank 2 Lite",
         "capability": "reranker",
         "input":       0.02,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+
+    # ── OpenAI GPT-5 family (current generation) ──
+    # Cache rates are 0.00 throughout: OpenAI *does* have prompt caching
+    # (unlike Voyage, which has no such dimension), but this table does not
+    # model it yet. That is safe only while callers make uncached calls —
+    # the moment a cached OpenAI call is priced, its cache tokens bill at
+    # $0 and undercount. `test_openai_rows_have_no_cache_rates` pins the
+    # assumption so enabling caching has to be a deliberate change here.
+    "gpt-5.6-sol": {
+        "label": "GPT-5.6 Sol",
+        "capability": "chat",
+        "input":        4.00,
+        "output":      20.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5.6-terra": {
+        "label": "GPT-5.6 Terra",
+        "capability": "chat",
+        "input":        2.00,
+        "output":      12.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5.6-luna": {
+        "label": "GPT-5.6 Luna",
+        "capability": "chat",
+        "input":        0.20,
+        "output":       1.20,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5.5": {
+        "label": "GPT-5.5",
+        "capability": "chat",
+        "input":        5.00,
+        "output":      30.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5.5-pro": {
+        "label": "GPT-5.5 Pro",
+        "capability": "chat",
+        "input":       30.00,
+        "output":     180.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5.4": {
+        "label": "GPT-5.4",
+        "capability": "chat",
+        "input":        2.50,
+        "output":      15.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5.4-mini": {
+        "label": "GPT-5.4 Mini",
+        "capability": "chat",
+        "input":        0.75,
+        "output":       4.50,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5.4-nano": {
+        "label": "GPT-5.4 Nano",
+        "capability": "chat",
+        "input":        0.20,
+        "output":       1.25,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5.4-pro": {
+        "label": "GPT-5.4 Pro",
+        "capability": "chat",
+        "input":       30.00,
+        "output":     180.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5.2": {
+        "label": "GPT-5.2",
+        "capability": "chat",
+        "input":        1.75,
+        "output":      14.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5.2-pro": {
+        "label": "GPT-5.2 Pro",
+        "capability": "chat",
+        "input":       21.00,
+        "output":     168.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5.1": {
+        "label": "GPT-5.1",
+        "capability": "chat",
+        "input":        1.25,
+        "output":      10.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5": {
+        "label": "GPT-5",
+        "capability": "chat",
+        "input":        1.25,
+        "output":      10.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5-mini": {
+        "label": "GPT-5 Mini",
+        "capability": "chat",
+        "input":        0.25,
+        "output":       2.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5-nano": {
+        "label": "GPT-5 Nano",
+        "capability": "chat",
+        "input":        0.05,
+        "output":       0.40,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "gpt-5-pro": {
+        "label": "GPT-5 Pro",
+        "capability": "chat",
+        "input":       15.00,
+        "output":     120.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+
+    # ── OpenAI embeddings (current generation) ──
+    # Embeddings have no output or cache dimension, like the Voyage rows.
+    "text-embedding-3-small": {
+        "label": "OpenAI Embedding 3 Small",
+        "capability": "embedding",
+        "input":        0.02,
+        "output":      0.00,
+        "cache_write": 0.00,
+        "cache_read":  0.00,
+    },
+    "text-embedding-3-large": {
+        "label": "OpenAI Embedding 3 Large",
+        "capability": "embedding",
+        "input":        0.13,
         "output":      0.00,
         "cache_write": 0.00,
         "cache_read":  0.00,
