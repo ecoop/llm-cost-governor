@@ -4,9 +4,11 @@
 import pytest
 
 from llm_cost_governor.budget import (
+    BudgetExceeded,
     RequirePricedModelHook,
     ScopeBudget,
     ScopeBudgetHook,
+    build_budget_chain,
 )
 from llm_cost_governor.counters import CostCounter
 from llm_cost_governor.pricing import UnpricedModel, is_priced
@@ -144,3 +146,53 @@ def test_priced_model_still_moves_the_budget():
     )
     hooks[1].post(ctx, usage)
     assert budget.spent_usd == pytest.approx(30.00)
+
+
+# ── build_budget_chain (#10 follow-up: the half-configured footgun) ────────────
+
+def test_chain_from_a_limit():
+    hooks = build_budget_chain(3.00)
+    assert [h.name for h in hooks] == ["require_priced_model", "scope_budget"]
+    assert hooks[1].budget.limit_usd == pytest.approx(3.00)
+
+
+def test_chain_from_an_existing_budget_shares_the_instance():
+    # Passing your own budget is how you read spent_usd afterwards, or share
+    # one ceiling across several call sites in a run.
+    b = ScopeBudget(limit_usd=5.00)
+    hooks = build_budget_chain(budget=b)
+    assert hooks[1].budget is b
+
+
+def test_chain_requires_exactly_one_of_limit_or_budget():
+    # Silently picking one would reintroduce the half-configured state this
+    # function exists to prevent.
+    with pytest.raises(ValueError, match="exactly one"):
+        build_budget_chain()
+    with pytest.raises(ValueError, match="exactly one"):
+        build_budget_chain(1.00, budget=ScopeBudget(limit_usd=2.00))
+
+
+def test_chain_forwards_exempt_to_the_gate():
+    hooks = build_budget_chain(3.00, exempt={"tavily-search"})
+    hooks[0].pre(_ctx("tavily-search"))  # admitted, not refused
+
+
+def test_chain_forwards_message_template_to_the_budget():
+    hooks = build_budget_chain(0.01, message_template=lambda b: "custom cap msg")
+    with pytest.raises(BudgetExceeded, match="custom cap msg"):
+        for h in hooks:
+            h.pre(_ctx("claude-opus-5"))
+
+
+def test_chain_actually_gates_an_unpriced_model():
+    hooks = build_budget_chain(1000.00)
+    with pytest.raises(UnpricedModel):
+        for h in hooks:
+            h.pre(_ctx("gpt-4o"))
+
+
+def test_chain_admits_a_priced_model_within_budget():
+    hooks = build_budget_chain(1000.00)
+    for h in hooks:
+        h.pre(_ctx("claude-opus-5"))
