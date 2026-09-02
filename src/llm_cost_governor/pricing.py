@@ -49,6 +49,11 @@ from pydantic import BaseModel, ConfigDict
 _log = logging.getLogger(__name__)
 
 # ── Model registry (single source of truth) ────────────────────────────────────
+# Each row also carries `provider` (the vendor, matching
+# `providers.get_provider` names) and `capability` — both static facts
+# about the model, kept beside its price so consumers read them rather
+# than re-deriving them from the id.
+#
 # Keys are BARE model aliases (`claude-haiku-4-5`), never dated snapshots
 # (`claude-haiku-4-5-20251001`). Bare aliases are how callers are meant to
 # name current models — they float to the latest snapshot — so keying on
@@ -70,6 +75,7 @@ MODEL_PRICING: dict[str, dict] = {
     "claude-fable-5": {
         "label": "Fable 5",
         "capability": "chat",
+        "provider": "anthropic",
         "input":      10.00,
         "output":     50.00,
         "cache_write": 12.50,
@@ -80,6 +86,7 @@ MODEL_PRICING: dict[str, dict] = {
     "claude-opus-5": {
         "label": "Opus 5",
         "capability": "chat",
+        "provider": "anthropic",
         "input":       5.00,
         "output":     25.00,
         "cache_write": 6.25,
@@ -92,6 +99,7 @@ MODEL_PRICING: dict[str, dict] = {
     "claude-sonnet-5": {
         "label": "Sonnet 5",
         "capability": "chat",
+        "provider": "anthropic",
         "input":       3.00,
         "output":     15.00,
         "cache_write": 3.75,
@@ -101,6 +109,7 @@ MODEL_PRICING: dict[str, dict] = {
     "claude-sonnet-4-6": {
         "label": "Sonnet 4.6",
         "capability": "chat",
+        "provider": "anthropic",
         "input":       3.00,
         "output":     15.00,
         "cache_write": 3.75,
@@ -113,6 +122,7 @@ MODEL_PRICING: dict[str, dict] = {
     "claude-opus-4-6": {
         "label": "Opus 4.6",
         "capability": "chat",
+        "provider": "anthropic",
         "input":       5.00,
         "output":     25.00,
         "cache_write": 6.25,
@@ -121,6 +131,7 @@ MODEL_PRICING: dict[str, dict] = {
     "claude-opus-4-7": {
         "label": "Opus 4.7",
         "capability": "chat",
+        "provider": "anthropic",
         "input":       5.00,
         "output":     25.00,
         "cache_write": 6.25,
@@ -129,6 +140,7 @@ MODEL_PRICING: dict[str, dict] = {
     "claude-opus-4-8": {
         "label": "Opus 4.8",
         "capability": "chat",
+        "provider": "anthropic",
         "input":       5.00,
         "output":     25.00,
         "cache_write": 6.25,
@@ -140,6 +152,7 @@ MODEL_PRICING: dict[str, dict] = {
     "claude-haiku-4-5": {
         "label": "Haiku 4.5",
         "capability": "chat",
+        "provider": "anthropic",
         "input":       1.00,
         "output":      5.00,
         "cache_write": 1.25,
@@ -154,6 +167,7 @@ MODEL_PRICING: dict[str, dict] = {
     "voyage-4": {
         "label": "Voyage 4",
         "capability": "embedding",
+        "provider": "voyage",
         "input":       0.06,
         "output":      0.00,
         "cache_write": 0.00,
@@ -162,6 +176,7 @@ MODEL_PRICING: dict[str, dict] = {
     "voyage-4-large": {
         "label": "Voyage 4 Large",
         "capability": "embedding",
+        "provider": "voyage",
         "input":       0.12,
         "output":      0.00,
         "cache_write": 0.00,
@@ -170,6 +185,7 @@ MODEL_PRICING: dict[str, dict] = {
     "voyage-4-lite": {
         "label": "Voyage 4 Lite",
         "capability": "embedding",
+        "provider": "voyage",
         "input":       0.02,
         "output":      0.00,
         "cache_write": 0.00,
@@ -178,6 +194,7 @@ MODEL_PRICING: dict[str, dict] = {
     "voyage-context-4": {
         "label": "Voyage Context 4",
         "capability": "embedding",
+        "provider": "voyage",
         "input":       0.18,
         "output":      0.00,
         "cache_write": 0.00,
@@ -186,6 +203,7 @@ MODEL_PRICING: dict[str, dict] = {
     "voyage-code-3": {
         "label": "Voyage Code 3",
         "capability": "embedding",
+        "provider": "voyage",
         "input":       0.18,
         "output":      0.00,
         "cache_write": 0.00,
@@ -196,6 +214,7 @@ MODEL_PRICING: dict[str, dict] = {
     "voyage-finance-2": {
         "label": "Voyage Finance 2",
         "capability": "embedding",
+        "provider": "voyage",
         "input":       0.12,
         "output":      0.00,
         "cache_write": 0.00,
@@ -204,6 +223,7 @@ MODEL_PRICING: dict[str, dict] = {
     "voyage-law-2": {
         "label": "Voyage Law 2",
         "capability": "embedding",
+        "provider": "voyage",
         "input":       0.12,
         "output":      0.00,
         "cache_write": 0.00,
@@ -212,6 +232,7 @@ MODEL_PRICING: dict[str, dict] = {
     "voyage-code-2": {
         "label": "Voyage Code 2",
         "capability": "embedding",
+        "provider": "voyage",
         "input":       0.12,
         "output":      0.00,
         "cache_write": 0.00,
@@ -225,6 +246,7 @@ MODEL_PRICING: dict[str, dict] = {
     "rerank-2.5": {
         "label": "Voyage Rerank 2.5",
         "capability": "reranker",
+        "provider": "voyage",
         "input":       0.05,
         "output":      0.00,
         "cache_write": 0.00,
@@ -233,6 +255,7 @@ MODEL_PRICING: dict[str, dict] = {
     "rerank-2.5-lite": {
         "label": "Voyage Rerank 2.5 Lite",
         "capability": "reranker",
+        "provider": "voyage",
         "input":       0.02,
         "output":      0.00,
         "cache_write": 0.00,
@@ -241,6 +264,7 @@ MODEL_PRICING: dict[str, dict] = {
     "rerank-2": {
         "label": "Voyage Rerank 2",
         "capability": "reranker",
+        "provider": "voyage",
         "input":       0.05,
         "output":      0.00,
         "cache_write": 0.00,
@@ -249,6 +273,7 @@ MODEL_PRICING: dict[str, dict] = {
     "rerank-2-lite": {
         "label": "Voyage Rerank 2 Lite",
         "capability": "reranker",
+        "provider": "voyage",
         "input":       0.02,
         "output":      0.00,
         "cache_write": 0.00,
@@ -265,6 +290,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5.6-sol": {
         "label": "GPT-5.6 Sol",
         "capability": "chat",
+        "provider": "openai",
         "input":        4.00,
         "output":      20.00,
         "cache_write":  5.000,
@@ -273,6 +299,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5.6-terra": {
         "label": "GPT-5.6 Terra",
         "capability": "chat",
+        "provider": "openai",
         "input":        2.00,
         "output":      12.00,
         "cache_write":  2.500,
@@ -281,6 +308,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5.6-luna": {
         "label": "GPT-5.6 Luna",
         "capability": "chat",
+        "provider": "openai",
         "input":        0.20,
         "output":       1.20,
         "cache_write":  0.250,
@@ -289,6 +317,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5.5": {
         "label": "GPT-5.5",
         "capability": "chat",
+        "provider": "openai",
         "input":        5.00,
         "output":      30.00,
         "cache_write":  0.000,
@@ -297,6 +326,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5.5-pro": {
         "label": "GPT-5.5 Pro",
         "capability": "chat",
+        "provider": "openai",
         "input":       30.00,
         "output":     180.00,
         "cache_write":  0.000,
@@ -305,6 +335,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5.4": {
         "label": "GPT-5.4",
         "capability": "chat",
+        "provider": "openai",
         "input":        2.50,
         "output":      15.00,
         "cache_write":  0.000,
@@ -313,6 +344,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5.4-mini": {
         "label": "GPT-5.4 Mini",
         "capability": "chat",
+        "provider": "openai",
         "input":        0.75,
         "output":       4.50,
         "cache_write":  0.000,
@@ -321,6 +353,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5.4-nano": {
         "label": "GPT-5.4 Nano",
         "capability": "chat",
+        "provider": "openai",
         "input":        0.20,
         "output":       1.25,
         "cache_write":  0.000,
@@ -329,6 +362,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5.4-pro": {
         "label": "GPT-5.4 Pro",
         "capability": "chat",
+        "provider": "openai",
         "input":       30.00,
         "output":     180.00,
         "cache_write":  0.000,
@@ -337,6 +371,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5.2": {
         "label": "GPT-5.2",
         "capability": "chat",
+        "provider": "openai",
         "input":        1.75,
         "output":      14.00,
         "cache_write":  0.000,
@@ -345,6 +380,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5.2-pro": {
         "label": "GPT-5.2 Pro",
         "capability": "chat",
+        "provider": "openai",
         "input":       21.00,
         "output":     168.00,
         "cache_write":  0.000,
@@ -353,6 +389,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5.1": {
         "label": "GPT-5.1",
         "capability": "chat",
+        "provider": "openai",
         "input":        1.25,
         "output":      10.00,
         "cache_write":  0.000,
@@ -361,6 +398,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5": {
         "label": "GPT-5",
         "capability": "chat",
+        "provider": "openai",
         "input":        1.25,
         "output":      10.00,
         "cache_write":  0.000,
@@ -369,6 +407,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5-mini": {
         "label": "GPT-5 Mini",
         "capability": "chat",
+        "provider": "openai",
         "input":        0.25,
         "output":       2.00,
         "cache_write":  0.000,
@@ -377,6 +416,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5-nano": {
         "label": "GPT-5 Nano",
         "capability": "chat",
+        "provider": "openai",
         "input":        0.05,
         "output":       0.40,
         "cache_write":  0.000,
@@ -385,6 +425,7 @@ MODEL_PRICING: dict[str, dict] = {
     "gpt-5-pro": {
         "label": "GPT-5 Pro",
         "capability": "chat",
+        "provider": "openai",
         "input":       15.00,
         "output":     120.00,
         "cache_write":  0.000,
@@ -396,6 +437,7 @@ MODEL_PRICING: dict[str, dict] = {
     "text-embedding-3-small": {
         "label": "OpenAI Embedding 3 Small",
         "capability": "embedding",
+        "provider": "openai",
         "input":        0.02,
         "output":      0.00,
         "cache_write": 0.00,
@@ -404,6 +446,7 @@ MODEL_PRICING: dict[str, dict] = {
     "text-embedding-3-large": {
         "label": "OpenAI Embedding 3 Large",
         "capability": "embedding",
+        "provider": "openai",
         "input":        0.13,
         "output":      0.00,
         "cache_write": 0.00,
@@ -425,6 +468,12 @@ RATES: dict[str, dict[str, float]] = {
     for model_id, row in MODEL_PRICING.items()
 }
 
+# Provider vocabulary. These strings are also the names
+# `providers.get_provider` accepts for the subset that has adapters, so a
+# caller can test `m.provider in providers.ADAPTERS` to find out whether
+# `guarded_call` can wrap the model or whether it must use `record_usage`.
+PROVIDERS: tuple[str, ...] = ("anthropic", "openai", "voyage")
+
 # Capability vocabulary. Open by design — new values are added here as the
 # catalog grows (`"vision"`, `"transcription"`, `"tts"`, …); consumers should
 # treat an unrecognized value as "not one I handle" rather than an error.
@@ -436,12 +485,24 @@ CAPABILITIES: tuple[str, ...] = (CHAT, EMBEDDING, RERANKER)
 
 
 class ModelRecord(BaseModel):
-    """One model's static facts: identity, capability, and its rates.
+    """One model's static facts: identity, provider, capability, rates.
 
     The typed view of a `MODEL_PRICING` row, with the model id folded in
     as `id`. Built by `catalog()`; `MODEL_PRICING` remains the source of
     truth and the dict form stays available for callers that already
     project it themselves.
+
+    ``provider`` names the vendor, using the same strings as
+    `providers.get_provider` — so ``m.provider in providers.ADAPTERS``
+    answers "can `guarded_call` wrap this model?" directly. It exists so
+    consumers stop inferring the vendor from id prefixes: that heuristic
+    is right until it silently isn't, on the first family whose ids match
+    none of the patterns a caller happened to write.
+
+    Note the deliberate asymmetry with `ADAPTERS`: every row has a
+    ``provider``, but not every provider has an adapter. `voyage` rows
+    are priced and metered through `record_usage` with no adapter, by
+    design.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -449,6 +510,7 @@ class ModelRecord(BaseModel):
     id: str
     label: str
     capability: str
+    provider: str
     input: float
     output: float
     cache_write: float

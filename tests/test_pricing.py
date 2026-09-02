@@ -232,6 +232,73 @@ def test_openai_models_are_reachable_through_the_priced_gate():
         assert is_priced(model), f"{model} would be refused by RequirePricedModelHook"
 
 
+# ── provider on model records ──────────────────────────────────────────────────
+
+def test_every_row_declares_a_known_provider():
+    # A row without a provider would land as a validation error in catalog();
+    # one with an unrecognized value would silently break a consumer routing
+    # on it. Both fail here instead.
+    from llm_cost_governor.pricing import MODEL_PRICING, PROVIDERS
+
+    for model, row in MODEL_PRICING.items():
+        assert "provider" in row, f"{model} has no provider"
+        assert row["provider"] in PROVIDERS, (
+            f"{model} has unknown provider {row['provider']!r}; add it to "
+            f"PROVIDERS if it is a new vendor"
+        )
+
+
+def test_provider_values_match_get_provider_names():
+    # The whole point of the field is that a consumer can hand it straight to
+    # get_provider() rather than translating. Every provider that HAS an
+    # adapter must therefore resolve under its own name.
+    from llm_cost_governor.pricing import PROVIDERS
+    from llm_cost_governor.providers import ADAPTERS, get_provider
+
+    assert ADAPTERS <= set(PROVIDERS), (
+        f"adapter names not in PROVIDERS: {ADAPTERS - set(PROVIDERS)}"
+    )
+    for name in ADAPTERS:
+        assert get_provider(name) is not None
+
+
+def test_not_every_provider_has_an_adapter():
+    # Documents the deliberate asymmetry so it does not read as an oversight.
+    # Voyage rows are priced and metered via record_usage with no adapter.
+    from llm_cost_governor.pricing import catalog
+    from llm_cost_governor.providers import ADAPTERS
+
+    voyage = [m for m in catalog() if m.provider == "voyage"]
+    assert voyage, "expected Voyage rows"
+    assert "voyage" not in ADAPTERS
+
+
+def test_provider_partitions_the_catalog():
+    from llm_cost_governor.pricing import MODEL_PRICING, PROVIDERS, catalog
+
+    assert sum(
+        len([m for m in catalog() if m.provider == p]) for p in PROVIDERS
+    ) == len(MODEL_PRICING)
+
+
+def test_provider_is_not_inferable_from_id_prefix_alone():
+    # The reason the field exists: id prefixes do not partition cleanly.
+    # `text-embedding-3-small` is OpenAI but shares no prefix with `gpt-`,
+    # and `rerank-2` is Voyage but shares none with `voyage-`.
+    from llm_cost_governor.pricing import MODEL_PRICING
+
+    assert MODEL_PRICING["text-embedding-3-small"]["provider"] == "openai"
+    assert MODEL_PRICING["rerank-2"]["provider"] == "voyage"
+
+
+def test_catalog_records_expose_provider():
+    from llm_cost_governor.pricing import CHAT, catalog
+
+    chat = {m.id: m.provider for m in catalog(CHAT)}
+    assert chat["claude-opus-5"] == "anthropic"
+    assert chat["gpt-5"] == "openai"
+
+
 def test_cost_unknown_model_warns_operator_once(monkeypatch):
     """Unknown model still costs $0, but pings the registered AlertSink once
     (per process) instead of silently undercounting."""
