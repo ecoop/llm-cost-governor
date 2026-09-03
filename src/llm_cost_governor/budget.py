@@ -12,6 +12,11 @@ so the pricing lookup lives in the caller (see `ScopeBudgetHook`).
 hole underneath every spend control: a model with no rate row costs $0,
 so it never moves any ledger and no cap can ever trip for it. The hook
 refuses such a call pre-flight, while aborting is still free.
+
+`build_budget_chain` assembles the two into a hard, gated ceiling in one
+call. Prefer it over hand-assembling the pair: it is a single import
+that either resolves or raises `ImportError` loudly, which is what stops
+a too-old install from silently degrading to no enforcement at all.
 """
 
 from __future__ import annotations
@@ -232,3 +237,73 @@ class RequirePricedModelHook:
 
     def post(self, ctx: CallContext, usage: UsageRecord) -> None:
         """No-op. The decision this hook makes is only meaningful pre-flight."""
+
+
+def build_budget_chain(
+    limit_usd: float | None = None,
+    *,
+    budget: ScopeBudget | None = None,
+    exempt: Collection[str] = (),
+    message_template: Callable[[ScopeBudget], str] | None = None,
+) -> list[object]:
+    """Assemble a hard, gated USD ceiling as one hook chain.
+
+    Returns ``[RequirePricedModelHook(...), ScopeBudgetHook(...)]`` — the
+    unpriced-model gate followed by the budget. Hand it straight to
+    ``guarded_call(hooks=...)``.
+
+    **Why prefer this over assembling the pair by hand.** A caller that
+    guards the import for compatibility with older releases::
+
+        try:
+            from llm_cost_governor.budget import (
+                RequirePricedModelHook, ScopeBudget, ScopeBudgetHook,
+            )
+        except ImportError:
+            return []                      # ← drops the CEILING too
+
+    silently loses *all* enforcement on an install predating the gate,
+    not just the gate. The failure is invisible: no exception, no log,
+    an app that believes it has a ceiling and does not. Importing this
+    one symbol instead either resolves or raises `ImportError` at the
+    import site, where it is obvious and actionable.
+
+    Args:
+        limit_usd: Ceiling in USD; a `ScopeBudget` is constructed for it.
+            Give exactly one of this or `budget`.
+        budget: An existing `ScopeBudget` to enforce. Pass this when you
+            need to read `spent_usd` afterwards, or to share one ceiling
+            across several call sites in the same run.
+        exempt: Model ids the gate should admit unpriced — forwarded to
+            `RequirePricedModelHook`. For providers metered in units this
+            library cannot express. Anything listed is unmetered.
+        message_template: Overrides the `BudgetExceeded` message;
+            forwarded to `ScopeBudgetHook`.
+
+    Returns:
+        The hooks, gate first. Order is not load-bearing — `run_pre`
+        executes every pre-hook and any raise aborts before the SDK call
+        — but gate-first surfaces the more specific exception when a
+        model is both unpriced and over budget.
+
+    Raises:
+        ValueError: If neither or both of `limit_usd` and `budget` are
+            given. Silently picking one would reintroduce exactly the
+            half-configured state this function exists to prevent.
+
+    Example:
+        >>> hooks = build_budget_chain(3.00)
+        >>> # or, to read spend afterwards:
+        >>> b = ScopeBudget(limit_usd=3.00)
+        >>> hooks = build_budget_chain(budget=b)
+    """
+    if (limit_usd is None) == (budget is None):
+        raise ValueError(
+            "build_budget_chain: give exactly one of `limit_usd` or `budget` "
+            f"(got limit_usd={limit_usd!r}, budget={budget!r})"
+        )
+    scope = budget if budget is not None else ScopeBudget(limit_usd=float(limit_usd))
+    return [
+        RequirePricedModelHook(exempt=exempt),
+        ScopeBudgetHook(scope, message_template=message_template),
+    ]

@@ -162,7 +162,7 @@ CI runs on Python 3.11, 3.12, 3.13 via [GitHub Actions](.github/workflows/ci.yml
 
 ## Versioning
 
-Currently `v0.4.4`. The `0.3.x` line renamed the package from `llm-guardrails` to `llm-cost-governor`; `0.4.0` adds `capability` to every model record; `0.4.1` adds `RequirePricedModelHook`, the pre-flight gate that stops an unpriced model from silently escaping every budget and cap, plus OpenAI GPT-5 and embedding rates; `0.4.2` meters Anthropic server-side tool use (web search) instead of dropping it; `0.4.3` adds the OpenAI provider adapter and real OpenAI cache rates; `0.4.4` adds `provider` to every model record. Semver from `v1.0.0` onward; anything before is "shipped but pre-stable API — expect breaking changes."
+Currently `v0.4.5`. The `0.3.x` line renamed the package from `llm-guardrails` to `llm-cost-governor`; `0.4.0` adds `capability` to every model record; `0.4.1` adds `RequirePricedModelHook`, the pre-flight gate that stops an unpriced model from silently escaping every budget and cap, plus OpenAI GPT-5 and embedding rates; `0.4.2` meters Anthropic server-side tool use (web search) instead of dropping it; `0.4.3` adds the OpenAI provider adapter and real OpenAI cache rates; `0.4.4` adds `provider` to every model record; `0.4.5` adds `build_budget_chain()`, a single import that assembles a gated ceiling or fails loudly. Semver from `v1.0.0` onward; anything before is "shipped but pre-stable API — expect breaking changes."
 
 ## Contributing
 
