@@ -39,8 +39,25 @@ class BudgetExceeded(Exception):
 class ScopeBudget:
     """Tracks cumulative LLM spend within a scope and enforces a USD ceiling.
 
-    The mechanism is scope-agnostic — it works for a session, a request,
-    a CLI run, or any other bounded slice of time the caller wants to cap.
+    **The scope is the object's lifetime.** There is no per-scope class and
+    no scope argument: a budget covers exactly the calls that share the
+    same instance. One per call caps a call; one per session caps a
+    session; one held across an eval sweep caps the sweep. Widening the
+    ceiling means keeping the object alive longer and passing it further,
+    not reaching for a different type.
+
+    Instances nest, because each tracks only what it was given. A per-run
+    budget and a per-sweep budget can sit in the same hook chain and
+    enforce independently.
+
+    **The limit: a shared instance is in-memory and process-local.** It
+    does not span subprocesses, distributed workers, or a horizontally
+    scaled service — each process gets its own object, so an "N dollar"
+    ceiling is enforced once per process and the effective total is N ×
+    processes. Nothing errors; it just permits a multiple of what was
+    configured. When spend must be bounded across processes, the
+    mechanism is a `CostCounter` on a shared `StateBackend`, which
+    persists, rather than a shared object, which cannot.
 
     Usage::
 
@@ -124,9 +141,12 @@ class ScopeBudgetHook:
     `BudgetExceeded` when the ceiling would be crossed. `post` records the
     actual cost from the returned `UsageRecord` against the running total.
 
-    Register one instance per scope (per session, per request, per CLI
-    run): the hook holds a reference to a specific `ScopeBudget` object,
-    so the scope lifetime tracks that object's lifetime.
+    The hook holds a reference to a specific `ScopeBudget`, so what the
+    ceiling covers is decided by which object you hand it and how long
+    you keep that object alive — see `ScopeBudget` for the scoping rules
+    and the process-local caveat. Registering a fresh budget per request
+    caps each request; reusing one across a run or a sweep caps the run
+    or the sweep.
 
     `message_template` lets callers override the user-facing message on
     the raised `BudgetExceeded` — Pitchcraft, for instance, ships a
@@ -293,9 +313,19 @@ def build_budget_chain(
 
     Example:
         >>> hooks = build_budget_chain(3.00)
-        >>> # or, to read spend afterwards:
-        >>> b = ScopeBudget(limit_usd=3.00)
-        >>> hooks = build_budget_chain(budget=b)
+
+        Reading spend afterwards, or capping a wider scope than one call,
+        both work the same way — hold the budget yourself and pass it in::
+
+        >>> sweep = ScopeBudget(limit_usd=50.00)   # one per sweep
+        >>> for combo in cases:                    # ... not one per call
+        ...     hooks = build_budget_chain(budget=sweep)
+        ...     guarded_call(client, hooks=hooks, **kwargs)
+        >>> sweep.spent_usd                        # running sweep total
+
+        `BudgetExceeded` fires on whichever call would cross the ceiling.
+        The budget is process-local; see `ScopeBudget` for what that rules
+        out.
     """
     if (limit_usd is None) == (budget is None):
         raise ValueError(

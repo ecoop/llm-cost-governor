@@ -127,8 +127,27 @@ hooks = build_budget_chain(limit_usd=3.00)   # [RequirePricedModelHook, ScopeBud
 Prefer it over assembling the pair by hand. An unpriced model costs `$0`, so it moves no
 ledger and no ceiling can trip for it — the gate is what closes that, and a single import
 that either resolves or raises is what stops an older install from silently degrading to
-no enforcement at all. Pass `budget=` instead of `limit_usd=` to share one ceiling across
-many calls (a session, a run, an eval sweep) and to read `spent_usd` afterwards.
+no enforcement at all.
+
+**A budget's scope is its object's lifetime.** There's no scope argument and no per-scope
+class: a `ScopeBudget` covers exactly the calls that share the instance. Widening the
+ceiling means holding it longer and passing it further:
+
+```python
+sweep = ScopeBudget(limit_usd=50.00)          # one per sweep, not per call
+
+for case in cases:
+    hooks = build_budget_chain(budget=sweep)   # same instance every iteration
+    guarded_call(client, hooks=hooks, **kwargs)
+
+sweep.spent_usd                                # running sweep total
+```
+
+Budgets nest — a per-run and a per-sweep instance can sit in the same chain and enforce
+independently. One caveat: a shared budget is **in-memory and process-local**, so it does
+not span subprocesses, distributed workers, or a horizontally scaled service — each
+process gets its own object, and the effective ceiling becomes N × processes. Bounding
+spend across processes is what `CostCounter` on a shared `StateBackend` is for.
 
 ### State backends
 
@@ -218,4 +237,4 @@ MIT. See [LICENSE](LICENSE).
 
 ---
 
-_Last updated:_ 2026-09-08
+_Last updated:_ 2026-09-09
