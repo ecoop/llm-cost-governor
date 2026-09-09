@@ -183,6 +183,7 @@ record_usage(
 - `RollingWeekCounter` — a generic per-key, rolling-week cumulative counter with cap enforcement (strict or lenient) across one or more named dimensions; the reusable core behind app-specific caps like per-token/per-IP upload limits. Import from `llm_cost_governor.counters`.
 - `ProviderTotals` + `ProviderTotalsHook` — a per-provider cumulative-USD read-model (anthropic vs voyage vs …) for usage widgets and cost dashboards; the breakdown the windowed `CostCounter` aggregates away. In-memory by default, optionally persisted through a `StateBackend`. Import from `llm_cost_governor.provider_totals`.
 - `RequirePricedModelHook` + `build_budget_chain()` — the pre-flight gate that refuses a model the pricing table can't cost, and the one-call helper that wires it in front of a budget. Without it an unpriced model is not billed loosely, it is exempt from every budget and cap.
+- Rate provenance — `RATES_AS_OF` records when each vendor's prices were last checked, and a test fails the build once any goes unchecked too long. A *missing* rate is loud (the gate refuses the call); a *wrong* one is silent, and this is the only thing that catches it.
 - Per-IP rate limiter (framework-neutral core + FastAPI dependency factory).
 - Structured event log (stdout → any log aggregator).
 - Provider adapters for Anthropic and OpenAI.
@@ -213,7 +214,7 @@ CI runs on Python 3.11, 3.12, 3.13 via [GitHub Actions](.github/workflows/ci.yml
 
 ## Versioning
 
-Currently `v0.4.5`. Published to PyPI since `0.3.0`.
+Currently `v0.4.6`. Published to PyPI since `0.3.0`.
 
 | | |
 |---|---|
@@ -224,6 +225,7 @@ Currently `v0.4.5`. Published to PyPI since `0.3.0`.
 | `0.4.3` | OpenAI provider adapter, and real OpenAI cache rates |
 | `0.4.4` | `provider` on every model record |
 | `0.4.5` | `build_budget_chain()` — a gated ceiling in one import, or a loud `ImportError` |
+| `0.4.6` | rate provenance — `RATES_AS_OF`, plus a build failure when it goes stale |
 
 Semver from `v1.0.0` onward; anything before is "shipped but pre-stable API — expect breaking changes."
 

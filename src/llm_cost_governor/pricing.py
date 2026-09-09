@@ -16,11 +16,9 @@ without re-deriving that from provider-name prefixes.
 tolerated (they cost $0 rather than raising) and pinged once per process
 via `_warn_unpriced`.
 
-Rates as of 2026-08-01 (Claude, Voyage) and 2026-08-27 (OpenAI):
-    Claude:  https://www.anthropic.com/pricing
-    Voyage:  https://docs.voyageai.com/docs/pricing
-    OpenAI:  https://developers.openai.com/api/docs/pricing
-All figures in USD per 1 million tokens.
+All figures in USD per 1 million tokens. When each vendor's rates were
+last checked is recorded in `RATES_AS_OF` — machine-readable, because a
+prose date nobody reads is how a table goes quietly wrong.
 
 Two different reasons a row carries zeros, worth keeping distinct:
 
@@ -43,6 +41,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
+from datetime import UTC, date, datetime
 
 from pydantic import BaseModel, ConfigDict
 
@@ -468,6 +467,68 @@ RATES: dict[str, dict[str, float]] = {
     for model_id, row in MODEL_PRICING.items()
 }
 
+# ── Rate provenance ───────────────────────────────────────────────────────────
+# When each vendor's published rates were last checked against the source
+# below. Machine-readable on purpose: a stale rate is the one failure the
+# pre-flight gate cannot see — `is_priced()` returns True for a row whose
+# numbers are wrong, so the call is admitted and every budget downstream is
+# computed from a bad figure, silently. `test_rate_provenance_is_fresh`
+# turns that into a build failure on a deadline instead.
+#
+# Updating a rate means updating its date here in the same commit.
+RATE_SOURCES: dict[str, str] = {
+    "anthropic": "https://www.anthropic.com/pricing",
+    "openai": "https://developers.openai.com/api/docs/pricing",
+    "voyage": "https://docs.voyageai.com/docs/pricing",
+    # Server-side tool rates (web search, web fetch) — see SERVER_TOOL_PRICING.
+    "anthropic-server-tools": "https://platform.claude.com/docs/en/about-claude/pricing",
+}
+
+RATES_AS_OF: dict[str, date] = {
+    "anthropic": date(2026, 8, 1),
+    "openai": date(2026, 8, 27),
+    "voyage": date(2026, 8, 1),
+    "anthropic-server-tools": date(2026, 8, 28),
+}
+
+# Days after which a vendor's rates are considered worth re-checking (warn)
+# and stale enough to fail the build (fail). The gap between them is the
+# window to act in before an unrelated PR goes red.
+RATES_STALE_WARN_DAYS = 90
+RATES_STALE_FAIL_DAYS = 180
+
+
+def rates_age_days(source: str, *, today: date | None = None) -> int:
+    """Days since `source`'s rates were last checked against its vendor page.
+
+    Args:
+        source: A key of `RATES_AS_OF` (a provider name, or
+            ``"anthropic-server-tools"`` for the non-token rates).
+        today: Overrides the current date; for tests. Defaults to
+            today in UTC — rate freshness is measured in months, so the
+            zone only matters for reproducibility.
+
+    Returns:
+        Age in days.
+
+    Raises:
+        KeyError: If `source` has no recorded provenance.
+    """
+    return ((today or datetime.now(tz=UTC).date()) - RATES_AS_OF[source]).days
+
+
+def stalest_rates(*, today: date | None = None) -> tuple[str, int]:
+    """The source whose rates were checked longest ago, and its age in days.
+
+    For apps that want to surface pricing freshness alongside spend — the
+    library has no way to tell you a rate is wrong, only how long it has
+    been since anyone looked.
+    """
+    ages = {src: rates_age_days(src, today=today) for src in RATES_AS_OF}
+    worst = max(ages, key=lambda k: ages[k])
+    return worst, ages[worst]
+
+
 # Provider vocabulary. These strings are also the names
 # `providers.get_provider` accepts for the subset that has adapters, so a
 # caller can test `m.provider in providers.ADAPTERS` to find out whether
@@ -571,7 +632,7 @@ def is_priced(model: str) -> bool:
 #     "usage": {"input_tokens": 105, "output_tokens": 6039,
 #               "server_tool_use": {"web_search_requests": 1}}
 #
-# Rates as of 2026-08-28 — https://platform.claude.com/docs/en/about-claude/pricing
+# Rates and source: RATE_SOURCES / RATES_AS_OF['anthropic-server-tools'].
 #
 # Keys map to USD *per request*. A key absent from this table is not priced;
 # `_warn_unpriced_tool` fires once for it rather than letting it cost $0
