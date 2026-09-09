@@ -196,3 +196,74 @@ def test_chain_admits_a_priced_model_within_budget():
     hooks = build_budget_chain(1000.00)
     for h in hooks:
         h.pre(_ctx("claude-opus-5"))
+
+
+# ── scope is the object's lifetime (#21) ──────────────────────────────────────
+
+def test_one_shared_budget_accumulates_across_calls():
+    # The sweep case: a ceiling wider than one call is the same class, held
+    # longer and passed further. Three calls at $30 each against a $100 cap —
+    # the fourth is what crosses it.
+    sweep = ScopeBudget(limit_usd=100.00)
+    ctx = _ctx("claude-opus-5")           # 10M + 10M tokens = $300... so use a
+    usage = UsageRecord(                   # realistic recorded cost instead
+        provider="anthropic", model="claude-opus-5",
+        input_tokens=1_000_000, output_tokens=1_000_000,
+        cache_read_input_tokens=0, cache_creation_input_tokens=0,
+        cost_usd=30.0, tags={}, ts=0.0,
+    )
+    hook = ScopeBudgetHook(sweep)
+    for _ in range(3):
+        hook.post(ctx, usage)
+    assert sweep.spent_usd == pytest.approx(90.00), "spend must accumulate on the shared object"
+    assert sweep.would_exceed(30.00) is True, "the 4th call crosses the sweep ceiling"
+
+
+def test_separate_budgets_do_not_share_spend():
+    # The per-call case: a fresh instance per call caps each call in isolation.
+    usage = UsageRecord(
+        provider="anthropic", model="claude-opus-5",
+        input_tokens=1_000_000, output_tokens=1_000_000,
+        cache_read_input_tokens=0, cache_creation_input_tokens=0,
+        cost_usd=30.0, tags={}, ts=0.0,
+    )
+    a, b = ScopeBudget(limit_usd=100.00), ScopeBudget(limit_usd=100.00)
+    ScopeBudgetHook(a).post(_ctx("claude-opus-5"), usage)
+    assert a.spent_usd == pytest.approx(30.00)
+    assert b.spent_usd == 0.0, "a second instance must not see the first's spend"
+
+
+def test_budgets_nest_and_enforce_independently():
+    # A narrow per-run budget and a wide per-sweep budget in one chain: the
+    # tighter one trips first, and each tracks only what it was given.
+    sweep = ScopeBudget(limit_usd=100.00)
+    run = ScopeBudget(limit_usd=40.00)
+    usage = UsageRecord(
+        provider="anthropic", model="claude-opus-5",
+        input_tokens=1_000_000, output_tokens=1_000_000,
+        cache_read_input_tokens=0, cache_creation_input_tokens=0,
+        cost_usd=30.0, tags={}, ts=0.0,
+    )
+    ctx = _ctx("claude-opus-5")
+    for h in (ScopeBudgetHook(sweep), ScopeBudgetHook(run)):
+        h.post(ctx, usage)
+    assert sweep.spent_usd == pytest.approx(30.00)
+    assert run.spent_usd == pytest.approx(30.00)
+    assert run.would_exceed(30.00) is True, "the narrower ceiling trips first"
+    assert sweep.would_exceed(30.00) is False, "the wider one still has room"
+
+
+def test_build_budget_chain_shares_one_budget_across_iterations():
+    # The documented sweep idiom: build_budget_chain(budget=...) per call,
+    # one budget for the whole loop.
+    sweep = ScopeBudget(limit_usd=100.00)
+    usage = UsageRecord(
+        provider="anthropic", model="claude-opus-5",
+        input_tokens=1_000_000, output_tokens=1_000_000,
+        cache_read_input_tokens=0, cache_creation_input_tokens=0,
+        cost_usd=30.0, tags={}, ts=0.0,
+    )
+    for _ in range(3):
+        hooks = build_budget_chain(budget=sweep)
+        hooks[1].post(_ctx("claude-opus-5"), usage)
+    assert sweep.spent_usd == pytest.approx(90.00)
