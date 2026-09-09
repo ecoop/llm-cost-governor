@@ -2,7 +2,7 @@
 
 How to adopt `llm-cost-governor` in a Python application. This is the practical companion to the [README](../README.md) — the README explains *what* the library does; this doc explains *how* to wire it into your app.
 
-**Reference implementation:** [Pitchcraft](https://github.com/ecoop/pitchcraft) consumes this library in production. Its [`app_state.py`](https://github.com/ecoop/pitchcraft/blob/main/app_state.py) is the canonical adoption pattern; the file pointers throughout this doc are all in that repo.
+**Reference implementation:** [Rulebook](https://github.com/ecoop/rulebook) consumes this library in production and is public, so every file referenced below is readable. Its [`src/rulebook/app_state.py`](https://github.com/ecoop/rulebook/blob/main/src/rulebook/app_state.py) is the canonical adoption pattern.
 
 ---
 
@@ -11,13 +11,13 @@ How to adopt `llm-cost-governor` in a Python application. This is the practical 
 Core install:
 
 ```bash
-pip install "llm-cost-governor @ git+https://github.com/ecoop/llm-cost-governor@v0.3.0"
+pip install llm-cost-governor
 ```
 
 With optional integrations:
 
 ```bash
-pip install "llm-cost-governor[gcs,fastapi,otel] @ git+https://github.com/ecoop/llm-cost-governor@v0.3.0"
+pip install "llm-cost-governor[gcs,fastapi,otel]"
 ```
 
 The optional extras:
@@ -40,7 +40,7 @@ The host app is responsible for:
 2. Constructing the library's singletons at startup
 3. Exposing them through a facade module that consumers import
 
-Pitchcraft's [`app_state.py`](https://github.com/ecoop/pitchcraft/blob/main/app_state.py) is the working example. The shape:
+Rulebook's [`app_state.py`](https://github.com/ecoop/rulebook/blob/main/src/rulebook/app_state.py) is the working example. The shape:
 
 ```python
 # app_state.py — the singleton facade
@@ -208,16 +208,19 @@ Every hook satisfies the `Hook` Protocol (`pre(ctx)` + `post(ctx, usage)` method
 
 | Hook | Module | Purpose |
 |---|---|---|
+| `RequirePricedModelHook` | `llm_cost_governor.budget` | Pre-flight refusal of a model the pricing table can't cost |
 | `ScopeBudgetHook` | `llm_cost_governor.budget` | Pre-flight budget enforcement per session/scope |
 | `WindowedCapHook` | `llm_cost_governor.counters` | Rolling-window cost cap enforcement + alert |
 | `EventLogHook` | `llm_cost_governor.events` | Structured JSON event per call (stdout) |
+| `ProviderTotalsHook` | `llm_cost_governor.provider_totals` | Per-provider cumulative USD, for usage widgets |
 | `OTelSpanHook` | `llm_cost_governor.otel.hooks` | Per-call OTel span with cost + token attrs |
 | `LangSmithMetadataHook` | `llm_cost_governor.otel.hooks` | Stamps LangSmith metadata from identity |
 
-Typical Pitchcraft chain:
+Typical chain:
 
 ```python
 hooks = [
+    RequirePricedModelHook(),        # refuse anything the table can't price
     ScopeBudgetHook(session_budget),
     WindowedCapHook(app_state.cost_counter),
     EventLogHook(enabled=settings.event_log_enabled, ...),
@@ -234,40 +237,84 @@ response, usage = guarded_call(
 
 For non-`guarded_call` shapes (Voyage embeddings, batch APIs), use `record_usage()` — same hook chain, no wrapper.
 
+### A gated ceiling in one call
+
+If all you need is a hard USD ceiling that can't be silently escaped, skip the hand-assembly:
+
+```python
+from llm_cost_governor.budget import build_budget_chain
+
+hooks = build_budget_chain(limit_usd=3.00)   # [RequirePricedModelHook, ScopeBudgetHook]
+```
+
+One import that either resolves or raises `ImportError` — which is what stops a
+too-old install from degrading silently to no enforcement. Pass `budget=` instead of
+`limit_usd=` to share one ceiling across many calls and read `spent_usd` afterwards.
+
 ---
 
-## Reference implementation: Pitchcraft
+## Reference implementation: Rulebook
 
+[Rulebook](https://github.com/ecoop/rulebook) is public and exercises most of the library's
+surface — persistence, per-identity caps, rate limiting, and the per-provider read-model.
 Files worth skimming, in priority order:
 
-1. [`app_state.py`](https://github.com/ecoop/pitchcraft/blob/main/app_state.py) — the singleton facade (the pattern to copy)
-2. [`main.py`](https://github.com/ecoop/pitchcraft/blob/main/main.py) — where `initialize()` is called (before FastAPI imports)
-3. [`agents/_anthropic_helpers.py`](https://github.com/ecoop/pitchcraft/blob/main/agents/_anthropic_helpers.py) — hook chain composition around `guarded_call`
-4. [`api/routers/sessions.py`](https://github.com/ecoop/pitchcraft/blob/main/api/routers/sessions.py) — how routers consume `app_state.enforce_ip_rate_limit`
+1. [`src/rulebook/app_state.py`](https://github.com/ecoop/rulebook/blob/main/src/rulebook/app_state.py) — the singleton facade (the pattern to copy)
+2. [`api/main.py`](https://github.com/ecoop/rulebook/blob/main/api/main.py) — where initialization happens relative to router import
+3. [`src/rulebook/generate.py`](https://github.com/ecoop/rulebook/blob/main/src/rulebook/generate.py) — hook-chain composition around `guarded_call`
+4. [`src/rulebook/embeddings.py`](https://github.com/ecoop/rulebook/blob/main/src/rulebook/embeddings.py) — the `record_usage` path for a provider with no adapter
+
+### A pattern worth stealing: fail closed at boot
+
+`app_state.py` refuses to start when a configured model can't be priced:
+
+> *"a model llm-cost-governor can't price bills $0, so it contributes nothing to the
+> rolling cost windows and `WindowedCapHook` never trips for it — the caps silently
+> under-enforce. Refuse to boot when guardrails are on and any configured model prices
+> at zero."*
+
+`RequirePricedModelHook` catches this per call; the boot check catches a misconfiguration
+before any traffic arrives, and turns a silent under-enforcement into a startup failure.
+It degrades to a warning when guardrails are off, and skips rather than crashing if the
+pricing symbol ever moves.
 
 ---
 
 ## Known gaps
 
-### Pricing table is Claude-only
+### Some providers are priced but have no adapter
 
-`MODEL_PRICING` in `llm_cost_governor.pricing` covers Anthropic Claude (Fable 5, Opus 5, Opus 4.6/4.7/4.8, Sonnet 5/4.6, Haiku 4.5). Voyage embeddings, OpenAI, Gemini — not included. A call to `usd_for_usage()` with an unrecognized model returns `$0` and fires a one-time "unpriced model" alert through the `AlertSink` protocol.
+`MODEL_PRICING` covers 38 models — Claude, the OpenAI GPT-5 family and embeddings, and
+Voyage embeddings and rerank — each row tagged with its `provider` and `capability`.
+Adapters, which is what `guarded_call` needs, ship for **Anthropic and OpenAI** only;
+`providers.ADAPTERS` is the authoritative list.
 
-Two ways to handle in your app:
+That asymmetry is deliberate, not an oversight: a rate row means "we can cost this", an
+adapter means "we can also wrap the call and run pre-flight hooks". Voyage models are
+priced and metered through `record_usage()`, which needs no adapter.
 
-- **Add pricing rows upstream** — small PR against [`src/llm_cost_governor/pricing.py`](../src/llm_cost_governor/pricing.py). Preferred; everyone benefits.
-- **Use `record_usage()` with a caller-computed cost** — the wrapper's post-hooks still fire and event-log the call correctly. Fine as a stopgap for models unlikely to be shared across consumers.
+For a model the table doesn't know at all, `usd_for_usage()` returns `$0` and fires a
+one-time alert through the `AlertSink` protocol — and `RequirePricedModelHook` refuses
+the call pre-flight, which is the behaviour you want, since a `$0` model is exempt from
+every budget and cap rather than merely cheap. To add one, open a small PR against
+[`src/llm_cost_governor/pricing.py`](../src/llm_cost_governor/pricing.py); everyone
+benefits, and the table is the only place rates live.
 
-### Provider adapters ship only for Anthropic
+### Not yet included
 
-[`providers/anthropic.py`](../src/llm_cost_governor/providers/anthropic.py) is the only shipped adapter. OpenAI, Voyage, Gemini adapters are ~30 lines each following the same shape but aren't in the box until someone needs them.
-
-### Test suite has skipped tests from the DI refactor
-
-The test suite predates the config-injection refactor and hasn't been fully rewritten for the DI constructor signatures. The library itself is production-verified through Pitchcraft; the skipped tests are follow-up work, not adoption blockers.
+- Streaming responses — the wrapper is synchronous today.
+- Multi-instance atomic counters — the rolling-window counter is correct at
+  `max-instances=1`. Under horizontal scaling each instance holds its own counter, so a
+  shared cap is enforced independently per instance; distributed correctness (e.g.
+  Redis-backed) is a future extension.
+- Retry / circuit-breaker logic — the library never retries; that's the caller's job.
 
 ---
 
 ## Getting help
 
-For questions on the adoption pattern that aren't covered here: open an issue on this repo, or point at the Pitchcraft reference files above — they're the working ground truth.
+For questions on the adoption pattern that aren't covered here: open an issue on this repo, or read the Rulebook files above — they're the working ground truth.
+
+---
+
+_Last updated:_ 2026-09-08
