@@ -1,5 +1,10 @@
 # llm-cost-governor
 
+[![PyPI](https://img.shields.io/pypi/v/llm-cost-governor)](https://pypi.org/project/llm-cost-governor/)
+[![CI](https://github.com/ecoop/llm-cost-governor/actions/workflows/ci.yml/badge.svg)](https://github.com/ecoop/llm-cost-governor/actions/workflows/ci.yml)
+[![Python](https://img.shields.io/pypi/pyversions/llm-cost-governor)](https://pypi.org/project/llm-cost-governor/)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 Composable pre-call and post-call hooks for LLM API calls: **pricing, budgets, cost caps, rate limits, event log, observability**.
 
 Wrap your existing Anthropic or OpenAI SDK calls with a single `guarded_call(client, ...)`, register the hooks you need, and get:
