@@ -67,6 +67,39 @@ _log = logging.getLogger(__name__)
 #   cache_read   — cost to read a cached entry         (0.10× input rate)
 
 MODEL_PRICING: dict[str, dict] = {
+    # ── Claude current lineup (Fable 5.1 / Opus 5.5 / Sonnet 5.5 / Haiku 4.5) ──
+    # NOTE: cache_read is no longer a uniform 0.1x of input. Fable 5.1 reads at
+    # 0.025x and Opus 5.5 at 0.05x; everything else is still 0.1x. Rates are
+    # stored explicitly per row precisely so a multiplier assumption cannot
+    # silently misprice a model.
+    "claude-fable-5-1": {
+        "label": "Fable 5.1",
+        "capability": "chat",
+        "provider": "anthropic",
+        "input":      10.00,
+        "output":     50.00,
+        "cache_write": 12.50,
+        "cache_read":   0.25,   # 0.025x input, not 0.1x
+    },
+    "claude-opus-5-5": {
+        "label": "Opus 5.5",
+        "capability": "chat",
+        "provider": "anthropic",
+        "input":       4.00,
+        "output":     20.00,
+        "cache_write": 5.00,
+        "cache_read":  0.20,    # 0.05x input, not 0.1x
+    },
+    "claude-sonnet-5-5": {
+        "label": "Sonnet 5.5",
+        "capability": "chat",
+        "provider": "anthropic",
+        "input":       2.00,
+        "output":     10.00,
+        "cache_write": 2.50,
+        "cache_read":  0.20,
+    },
+
     # ── Claude 5 family ──
     # Fable 5: Anthropic's most capable widely released model. Priced above
     # Opus tier for the most demanding long-horizon agentic and reasoning
@@ -95,14 +128,19 @@ MODEL_PRICING: dict[str, dict] = {
     # is running an introductory $2/$10 through 2026-08-31. We price at the
     # standard sticker — the intro discount is a billing-time credit and
     # doesn't need to be reflected in pre-flight budget math.
+    # Sonnet 5: $2/$10. The row previously carried $3/$15 — the increase
+    # Anthropic announced for 2026-09-01 and then cancelled, leaving the
+    # launch price standard. A rate written from an announced future price
+    # is wrong the day it lands and never ages into correctness, which is
+    # why RATES_AS_OF tracks when a price was last *verified*, not written.
     "claude-sonnet-5": {
         "label": "Sonnet 5",
         "capability": "chat",
         "provider": "anthropic",
-        "input":       3.00,
-        "output":     15.00,
-        "cache_write": 3.75,
-        "cache_read":  0.30,
+        "input":       2.00,
+        "output":     10.00,
+        "cache_write": 2.50,
+        "cache_read":  0.20,
     },
     # ── Claude 4.x family (still active) ──
     "claude-sonnet-4-6": {
@@ -144,6 +182,24 @@ MODEL_PRICING: dict[str, dict] = {
         "output":     25.00,
         "cache_write": 6.25,
         "cache_read":  0.50,
+    },
+    "claude-opus-4-5": {
+        "label": "Opus 4.5",
+        "capability": "chat",
+        "provider": "anthropic",
+        "input":       5.00,
+        "output":     25.00,
+        "cache_write": 6.25,
+        "cache_read":  0.50,
+    },
+    "claude-sonnet-4-5": {
+        "label": "Sonnet 4.5",
+        "capability": "chat",
+        "provider": "anthropic",
+        "input":       3.00,
+        "output":     15.00,
+        "cache_write": 3.75,
+        "cache_read":  0.30,
     },
     # Haiku 4.5: cheapest current-generation Claude. Keyed bare, like every
     # other row — callers are meant to name the floating alias, not a dated
@@ -279,13 +335,53 @@ MODEL_PRICING: dict[str, dict] = {
         "cache_read":  0.00,
     },
 
-    # ── OpenAI GPT-5 family (current generation) ──
-    # Cache rates are 0.00 throughout: OpenAI *does* have prompt caching
-    # (unlike Voyage, which has no such dimension), but this table does not
-    # model it yet. That is safe only while callers make uncached calls —
-    # the moment a cached OpenAI call is priced, its cache tokens bill at
-    # $0 and undercount. `test_openai_rows_have_no_cache_rates` pins the
-    # assumption so enabling caching has to be a deliberate change here.
+    # ── OpenAI GPT-6 family (current generation) ──
+    # Unlike the GPT-5 rows below, these DO carry a cache-write fee — OpenAI
+    # lists one for the GPT-6 series. A zero here would undercount every
+    # cached call.
+    "gpt-6-astra": {
+        "label": "GPT-6 Astra",
+        "capability": "chat",
+        "provider": "openai",
+        "input":      10.000,
+        "output":     50.000,
+        "cache_write": 12.500,
+        "cache_read":   1.000,
+    },
+    "gpt-6.1-sol": {
+        "label": "GPT-6.1 Sol",
+        "capability": "chat",
+        "provider": "openai",
+        "input":       2.000,
+        "output":     10.000,
+        "cache_write":  2.500,
+        "cache_read":   0.100,
+    },
+    "gpt-6-sol": {
+        "label": "GPT-6 Sol",
+        "capability": "chat",
+        "provider": "openai",
+        "input":       2.000,
+        "output":     10.000,
+        "cache_write":  2.500,
+        "cache_read":   0.200,
+    },
+    "gpt-6-luna": {
+        "label": "GPT-6 Luna",
+        "capability": "chat",
+        "provider": "openai",
+        "input":       0.100,
+        "output":      0.500,
+        "cache_write":  0.125,
+        "cache_read":   0.010,
+    },
+
+    # ── OpenAI GPT-5 family (previous generation) ──
+    # cache_write is 0.00 on these rows because OpenAI charges nothing to
+    # populate the cache for the GPT-5 series — "known free", not
+    # "unmodelled". cache_read carries the real discounted rate. The GPT-6
+    # rows above DO have a write fee, so this is per-family, not a
+    # provider-wide rule.
     "gpt-5.6-sol": {
         "label": "GPT-5.6 Sol",
         "capability": "chat",
@@ -485,8 +581,8 @@ RATE_SOURCES: dict[str, str] = {
 }
 
 RATES_AS_OF: dict[str, date] = {
-    "anthropic": date(2026, 8, 1),
-    "openai": date(2026, 8, 27),
+    "anthropic": date(2026, 9, 29),
+    "openai": date(2026, 9, 29),
     "voyage": date(2026, 8, 1),
     "anthropic-server-tools": date(2026, 8, 28),
 }

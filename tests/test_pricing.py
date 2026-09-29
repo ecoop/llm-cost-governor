@@ -299,6 +299,42 @@ def test_catalog_records_expose_provider():
     assert chat["gpt-5"] == "openai"
 
 
+# ── rates that a plausible-looking assumption would get wrong ──────────────────
+
+def test_sonnet_5_is_two_and_ten():
+    # Regression: this row shipped as $3/$15 — the increase Anthropic announced
+    # for 2026-09-01 and then cancelled. It was wrong the day it was written,
+    # not drifted, so no staleness check could have caught it. Pinned because
+    # the $3/$15 figure is still quotable from pre-cancellation sources.
+    from llm_cost_governor.pricing import MODEL_PRICING
+
+    row = MODEL_PRICING["claude-sonnet-5"]
+    assert (row["input"], row["output"]) == (2.00, 10.00)
+    assert (row["cache_write"], row["cache_read"]) == (2.50, 0.20)
+
+
+def test_non_standard_cache_read_multipliers_are_preserved():
+    # cache_read is NOT a uniform 0.1x of input any more. Anyone "fixing" these
+    # to the standard multiplier would overcharge cached reads by 2-4x.
+    from llm_cost_governor.pricing import MODEL_PRICING
+
+    for model, multiplier in (("claude-fable-5-1", 0.025), ("claude-opus-5-5", 0.05)):
+        row = MODEL_PRICING[model]
+        assert row["cache_read"] == pytest.approx(row["input"] * multiplier), (
+            f"{model} cache_read should be {multiplier}x input, not the 0.1x default"
+        )
+
+
+def test_gpt6_rows_carry_a_cache_write_fee():
+    # The GPT-5 rows are cache_write 0.00 because writes are free there. That is
+    # per-family, not provider-wide — GPT-6 lists a write fee, and a zero would
+    # undercount every cached call.
+    from llm_cost_governor.pricing import MODEL_PRICING
+
+    for model in [m for m in MODEL_PRICING if m.startswith("gpt-6")]:
+        assert MODEL_PRICING[model]["cache_write"] > 0, f"{model} lost its write fee"
+
+
 def test_cost_unknown_model_warns_operator_once(monkeypatch):
     """Unknown model still costs $0, but pings the registered AlertSink once
     (per process) instead of silently undercounting."""
