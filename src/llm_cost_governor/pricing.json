@@ -1,0 +1,451 @@
+{
+  "claude-fable-5-1": {
+    "label": "Fable 5.1",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 10.0,
+    "output": 50.0,
+    "cache_write": 12.5,
+    "cache_read": 0.25,
+    "note": "cache_read is 0.025x input, not the usual 0.1x."
+  },
+  "claude-opus-5-5": {
+    "label": "Opus 5.5",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 4.0,
+    "output": 20.0,
+    "cache_write": 5.0,
+    "cache_read": 0.2,
+    "note": "cache_read is 0.05x input, not the usual 0.1x."
+  },
+  "claude-sonnet-5-5": {
+    "label": "Sonnet 5.5",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 2.0,
+    "output": 10.0,
+    "cache_write": 2.5,
+    "cache_read": 0.1,
+    "note": "cache_read is 0.05x input, not the usual 0.1x. The vendor footnote named only Opus 5.5 until 2026-10-09."
+  },
+  "claude-fable-5": {
+    "label": "Fable 5",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 10.0,
+    "output": 50.0,
+    "cache_write": 12.5,
+    "cache_read": 1.0
+  },
+  "claude-opus-5": {
+    "label": "Opus 5",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 5.0,
+    "output": 25.0,
+    "cache_write": 6.25,
+    "cache_read": 0.5
+  },
+  "claude-sonnet-5": {
+    "label": "Sonnet 5",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 2.0,
+    "output": 10.0,
+    "cache_write": 2.5,
+    "cache_read": 0.2,
+    "note": "Was shipped at $3/$15 \u2014 an announced increase Anthropic later cancelled, leaving the launch price standard. Wrong when written, not drifted."
+  },
+  "claude-sonnet-4-6": {
+    "label": "Sonnet 4.6",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 3.0,
+    "output": 15.0,
+    "cache_write": 3.75,
+    "cache_read": 0.3
+  },
+  "claude-opus-4-6": {
+    "label": "Opus 4.6",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 5.0,
+    "output": 25.0,
+    "cache_write": 6.25,
+    "cache_read": 0.5
+  },
+  "claude-opus-4-7": {
+    "label": "Opus 4.7",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 5.0,
+    "output": 25.0,
+    "cache_write": 6.25,
+    "cache_read": 0.5
+  },
+  "claude-opus-4-8": {
+    "label": "Opus 4.8",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 5.0,
+    "output": 25.0,
+    "cache_write": 6.25,
+    "cache_read": 0.5
+  },
+  "claude-opus-4-5": {
+    "label": "Opus 4.5",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 5.0,
+    "output": 25.0,
+    "cache_write": 6.25,
+    "cache_read": 0.5
+  },
+  "claude-sonnet-4-5": {
+    "label": "Sonnet 4.5",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 3.0,
+    "output": 15.0,
+    "cache_write": 3.75,
+    "cache_read": 0.3
+  },
+  "claude-haiku-4-5": {
+    "label": "Haiku 4.5",
+    "capability": "chat",
+    "provider": "anthropic",
+    "input": 1.0,
+    "output": 5.0,
+    "cache_write": 1.25,
+    "cache_read": 0.1,
+    "note": "Keyed on the bare alias like every other row; a dated key here bills the floating alias at $0 (see issue #5)."
+  },
+  "voyage-4": {
+    "label": "Voyage 4",
+    "capability": "embedding",
+    "provider": "voyage",
+    "input": 0.06,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "voyage-4-large": {
+    "label": "Voyage 4 Large",
+    "capability": "embedding",
+    "provider": "voyage",
+    "input": 0.12,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "voyage-4-lite": {
+    "label": "Voyage 4 Lite",
+    "capability": "embedding",
+    "provider": "voyage",
+    "input": 0.02,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "voyage-context-4": {
+    "label": "Voyage Context 4",
+    "capability": "embedding",
+    "provider": "voyage",
+    "input": 0.18,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "voyage-code-3": {
+    "label": "Voyage Code 3",
+    "capability": "embedding",
+    "provider": "voyage",
+    "input": 0.18,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "voyage-finance-2": {
+    "label": "Voyage Finance 2",
+    "capability": "embedding",
+    "provider": "voyage",
+    "input": 0.12,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "voyage-law-2": {
+    "label": "Voyage Law 2",
+    "capability": "embedding",
+    "provider": "voyage",
+    "input": 0.12,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "voyage-code-2": {
+    "label": "Voyage Code 2",
+    "capability": "embedding",
+    "provider": "voyage",
+    "input": 0.12,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "rerank-2.5": {
+    "label": "Voyage Rerank 2.5",
+    "capability": "reranker",
+    "provider": "voyage",
+    "input": 0.05,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "rerank-2.5-lite": {
+    "label": "Voyage Rerank 2.5 Lite",
+    "capability": "reranker",
+    "provider": "voyage",
+    "input": 0.02,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "rerank-2": {
+    "label": "Voyage Rerank 2",
+    "capability": "reranker",
+    "provider": "voyage",
+    "input": 0.05,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "rerank-2-lite": {
+    "label": "Voyage Rerank 2 Lite",
+    "capability": "reranker",
+    "provider": "voyage",
+    "input": 0.02,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "gpt-6-astra": {
+    "label": "GPT-6 Astra",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 10.0,
+    "output": 50.0,
+    "cache_write": 12.5,
+    "cache_read": 1.0
+  },
+  "gpt-6.1-sol": {
+    "label": "GPT-6.1 Sol",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 2.0,
+    "output": 10.0,
+    "cache_write": 2.5,
+    "cache_read": 0.1
+  },
+  "gpt-6-sol": {
+    "label": "GPT-6 Sol",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 2.0,
+    "output": 10.0,
+    "cache_write": 2.5,
+    "cache_read": 0.2
+  },
+  "gpt-6-luna": {
+    "label": "GPT-6 Luna",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 0.1,
+    "output": 0.5,
+    "cache_write": 0.125,
+    "cache_read": 0.01
+  },
+  "gpt-5.6-sol": {
+    "label": "GPT-5.6 Sol",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 4.0,
+    "output": 20.0,
+    "cache_write": 5.0,
+    "cache_read": 0.4
+  },
+  "gpt-5.6-terra": {
+    "label": "GPT-5.6 Terra",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 2.0,
+    "output": 12.0,
+    "cache_write": 2.5,
+    "cache_read": 0.2
+  },
+  "gpt-5.6-luna": {
+    "label": "GPT-5.6 Luna",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 0.2,
+    "output": 1.2,
+    "cache_write": 0.25,
+    "cache_read": 0.02
+  },
+  "gpt-5.5": {
+    "label": "GPT-5.5",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 5.0,
+    "output": 30.0,
+    "cache_write": 0.0,
+    "cache_read": 0.5
+  },
+  "gpt-5.5-pro": {
+    "label": "GPT-5.5 Pro",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 30.0,
+    "output": 180.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "gpt-5.4": {
+    "label": "GPT-5.4",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 2.5,
+    "output": 15.0,
+    "cache_write": 0.0,
+    "cache_read": 0.25
+  },
+  "gpt-5.4-mini": {
+    "label": "GPT-5.4 Mini",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 0.75,
+    "output": 4.5,
+    "cache_write": 0.0,
+    "cache_read": 0.075
+  },
+  "gpt-5.4-nano": {
+    "label": "GPT-5.4 Nano",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 0.2,
+    "output": 1.25,
+    "cache_write": 0.0,
+    "cache_read": 0.02
+  },
+  "gpt-5.4-pro": {
+    "label": "GPT-5.4 Pro",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 30.0,
+    "output": 180.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "gpt-5.2": {
+    "label": "GPT-5.2",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 1.75,
+    "output": 14.0,
+    "cache_write": 0.0,
+    "cache_read": 0.175
+  },
+  "gpt-5.2-pro": {
+    "label": "GPT-5.2 Pro",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 21.0,
+    "output": 168.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "gpt-5.1": {
+    "label": "GPT-5.1",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 1.25,
+    "output": 10.0,
+    "cache_write": 0.0,
+    "cache_read": 0.125
+  },
+  "gpt-5": {
+    "label": "GPT-5",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 1.25,
+    "output": 10.0,
+    "cache_write": 0.0,
+    "cache_read": 0.125
+  },
+  "gpt-5-mini": {
+    "label": "GPT-5 Mini",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 0.25,
+    "output": 2.0,
+    "cache_write": 0.0,
+    "cache_read": 0.025
+  },
+  "gpt-5-nano": {
+    "label": "GPT-5 Nano",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 0.05,
+    "output": 0.4,
+    "cache_write": 0.0,
+    "cache_read": 0.005
+  },
+  "gpt-5-pro": {
+    "label": "GPT-5 Pro",
+    "capability": "chat",
+    "provider": "openai",
+    "input": 15.0,
+    "output": 120.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "text-embedding-3-small": {
+    "label": "OpenAI Embedding 3 Small",
+    "capability": "embedding",
+    "provider": "openai",
+    "input": 0.02,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "text-embedding-3-large": {
+    "label": "OpenAI Embedding 3 Large",
+    "capability": "embedding",
+    "provider": "openai",
+    "input": 0.13,
+    "output": 0.0,
+    "cache_write": 0.0,
+    "cache_read": 0.0
+  },
+  "claude-haiku-5-5": {
+    "label": "Haiku 5.5",
+    "capability": "chat",
+    "provider": "anthropic",
+    "note": "Tiered by prompt length: the rate steps 5x above 100K input tokens.",
+    "tiers": [
+      {
+        "max_input_tokens": 100000,
+        "input": 0.1,
+        "output": 0.5,
+        "cache_write": 0.125,
+        "cache_read": 0.01
+      },
+      {
+        "input": 0.5,
+        "output": 2.5,
+        "cache_write": 0.625,
+        "cache_read": 0.05
+      }
+    ]
+  }
+}

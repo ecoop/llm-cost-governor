@@ -39,530 +39,126 @@ Two different reasons a row carries zeros, worth keeping distinct:
 
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import Mapping
 from datetime import UTC, date, datetime
+from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict
 
 _log = logging.getLogger(__name__)
 
-# ── Model registry (single source of truth) ────────────────────────────────────
-# Each row also carries `provider` (the vendor, matching
-# `providers.get_provider` names) and `capability` — both static facts
-# about the model, kept beside its price so consumers read them rather
-# than re-deriving them from the id.
+class InvalidRateRow(ValueError):
+    """Raised when a rate row is malformed or incomplete, from the shipped
+    table at import or from `register_rates` at runtime."""
+
+
+# ── Model registry (single source of truth) ───────────────────────────────────
+# The table lives in `pricing.json`, beside this module and shipped in the
+# wheel. It is data, so it is read rather than executed — a malformed row
+# fails at import with a validation error instead of at first call.
 #
-# Keys are BARE model aliases (`claude-haiku-4-5`), never dated snapshots
-# (`claude-haiku-4-5-20251001`). Bare aliases are how callers are meant to
-# name current models — they float to the latest snapshot — so keying on
-# them is what makes `_cost` resolve for ordinary application code. A dated
-# key here silently bills that model at $0 (see #5). Enforced by
-# `test_model_pricing_keys_are_bare_aliases`.
+# Each row carries `label`, `capability`, `provider`, an optional `note`, and
+# EITHER four flat rates (`input` / `output` / `cache_write` / `cache_read`)
+# OR a `tiers` list for a model whose rate depends on prompt size.
 #
-# Each row: `label` (UI display) + four USD-per-1M-token rates:
-#   input        — uncached input tokens
-#   output       — output tokens
-#   cache_write  — cost to create a prompt-cache entry (1.25× input rate)
-#   cache_read   — cost to read a cached entry         (0.10× input rate)
+# `note` exists because JSON has no comments and the reasoning behind some
+# values is load-bearing — it is what stops a future reader "correcting" a
+# deliberately non-standard rate.
+#
+# Keys are BARE model aliases (`claude-haiku-4-5`), never dated snapshots: a
+# dated key bills the floating alias callers actually use at $0 (issue #5).
+# Enforced by `test_model_pricing_keys_are_bare_aliases`.
 
-MODEL_PRICING: dict[str, dict] = {
-    # ── Claude current lineup (Fable 5.1 / Opus 5.5 / Sonnet 5.5 / Haiku 4.5) ──
-    # NOTE: cache_read is no longer a uniform 0.1x of input. Fable 5.1 reads at
-    # 0.025x and Opus 5.5 at 0.05x; everything else is still 0.1x. Rates are
-    # stored explicitly per row precisely so a multiplier assumption cannot
-    # silently misprice a model.
-    "claude-fable-5-1": {
-        "label": "Fable 5.1",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":      10.00,
-        "output":     50.00,
-        "cache_write": 12.50,
-        "cache_read":   0.25,   # 0.025x input, not 0.1x
-    },
-    "claude-opus-5-5": {
-        "label": "Opus 5.5",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":       4.00,
-        "output":     20.00,
-        "cache_write": 5.00,
-        "cache_read":  0.20,    # 0.05x input, not 0.1x
-    },
-    "claude-sonnet-5-5": {
-        "label": "Sonnet 5.5",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":       2.00,
-        "output":     10.00,
-        "cache_write": 2.50,
-        "cache_read":  0.10,    # 0.05x input — the vendor footnote listed
-                                # Opus 5.5 only on 2026-09-29 and now names
-                                # Sonnet 5.5 too. Re-verified 2026-10-09.
-    },
+# The four USD-per-1M-token rate keys. Declared here because the loader
+# validates against them before anything else in the module runs.
+RATE_KEYS: tuple[str, ...] = ("input", "output", "cache_write", "cache_read")
 
-    # ── Claude 5 family ──
-    # Fable 5: Anthropic's most capable widely released model. Priced above
-    # Opus tier for the most demanding long-horizon agentic and reasoning
-    # workloads.
-    "claude-fable-5": {
-        "label": "Fable 5",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":      10.00,
-        "output":     50.00,
-        "cache_write": 12.50,
-        "cache_read":   1.00,
-    },
-    # Opus 5: current-generation Opus, same $5/$25 sticker as the 4.x
-    # Opus line.
-    "claude-opus-5": {
-        "label": "Opus 5",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":       5.00,
-        "output":     25.00,
-        "cache_write": 6.25,
-        "cache_read":  0.50,
-    },
-    # Sonnet 5: current-generation Sonnet. Standard rate $3/$15; Anthropic
-    # is running an introductory $2/$10 through 2026-08-31. We price at the
-    # standard sticker — the intro discount is a billing-time credit and
-    # doesn't need to be reflected in pre-flight budget math.
-    # Sonnet 5: $2/$10. The row previously carried $3/$15 — the increase
-    # Anthropic announced for 2026-09-01 and then cancelled, leaving the
-    # launch price standard. A rate written from an announced future price
-    # is wrong the day it lands and never ages into correctness, which is
-    # why RATES_AS_OF tracks when a price was last *verified*, not written.
-    "claude-sonnet-5": {
-        "label": "Sonnet 5",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":       2.00,
-        "output":     10.00,
-        "cache_write": 2.50,
-        "cache_read":  0.20,
-    },
-    # ── Claude 4.x family (still active) ──
-    "claude-sonnet-4-6": {
-        "label": "Sonnet 4.6",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":       3.00,
-        "output":     15.00,
-        "cache_write": 3.75,
-        "cache_read":  0.30,
-    },
-    # Opus 4.6, 4.7, and 4.8 share the same per-token rate ($5/$25). Opus
-    # 4.7+ use a new tokenizer that produces up to 35% more tokens from the
-    # same text, so effective cost per request is higher — especially for
-    # structured/code content.
-    "claude-opus-4-6": {
-        "label": "Opus 4.6",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":       5.00,
-        "output":     25.00,
-        "cache_write": 6.25,
-        "cache_read":  0.50,
-    },
-    "claude-opus-4-7": {
-        "label": "Opus 4.7",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":       5.00,
-        "output":     25.00,
-        "cache_write": 6.25,
-        "cache_read":  0.50,
-    },
-    "claude-opus-4-8": {
-        "label": "Opus 4.8",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":       5.00,
-        "output":     25.00,
-        "cache_write": 6.25,
-        "cache_read":  0.50,
-    },
-    "claude-opus-4-5": {
-        "label": "Opus 4.5",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":       5.00,
-        "output":     25.00,
-        "cache_write": 6.25,
-        "cache_read":  0.50,
-    },
-    "claude-sonnet-4-5": {
-        "label": "Sonnet 4.5",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":       3.00,
-        "output":     15.00,
-        "cache_write": 3.75,
-        "cache_read":  0.30,
-    },
-    # Haiku 4.5: cheapest current-generation Claude. Keyed bare, like every
-    # other row — callers are meant to name the floating alias, not a dated
-    # snapshot (see test_model_pricing_keys_are_bare_aliases).
-    "claude-haiku-4-5": {
-        "label": "Haiku 4.5",
-        "capability": "chat",
-        "provider": "anthropic",
-        "input":       1.00,
-        "output":      5.00,
-        "cache_write": 1.25,
-        "cache_read":  0.10,
-    },
+_TABLE_PATH = Path(__file__).with_name("pricing.json")
 
-    # ── Voyage embeddings (current generation) ──
-    # Embeddings have no output/cache dimensions — those fields are 0
-    # so the same `_cost` arithmetic works for both providers. All rows
-    # come with a 200M-token free tier unless noted; free tokens are
-    # billing-side and not modeled here.
-    "voyage-4": {
-        "label": "Voyage 4",
-        "capability": "embedding",
-        "provider": "voyage",
-        "input":       0.06,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
-    "voyage-4-large": {
-        "label": "Voyage 4 Large",
-        "capability": "embedding",
-        "provider": "voyage",
-        "input":       0.12,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
-    "voyage-4-lite": {
-        "label": "Voyage 4 Lite",
-        "capability": "embedding",
-        "provider": "voyage",
-        "input":       0.02,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
-    "voyage-context-4": {
-        "label": "Voyage Context 4",
-        "capability": "embedding",
-        "provider": "voyage",
-        "input":       0.18,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
-    "voyage-code-3": {
-        "label": "Voyage Code 3",
-        "capability": "embedding",
-        "provider": "voyage",
-        "input":       0.18,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
-    # voyage-finance-2, voyage-law-2, voyage-code-2 share the same
-    # $0.12/1M rate but a smaller 50M free tier.
-    "voyage-finance-2": {
-        "label": "Voyage Finance 2",
-        "capability": "embedding",
-        "provider": "voyage",
-        "input":       0.12,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
-    "voyage-law-2": {
-        "label": "Voyage Law 2",
-        "capability": "embedding",
-        "provider": "voyage",
-        "input":       0.12,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
-    "voyage-code-2": {
-        "label": "Voyage Code 2",
-        "capability": "embedding",
-        "provider": "voyage",
-        "input":       0.12,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
 
-    # ── Voyage rerank ──
-    # Batch API applies a 33% discount, billed via the batch endpoint;
-    # not modeled here since it's a request-shape distinction rather
-    # than a model-id one.
-    "rerank-2.5": {
-        "label": "Voyage Rerank 2.5",
-        "capability": "reranker",
-        "provider": "voyage",
-        "input":       0.05,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
-    "rerank-2.5-lite": {
-        "label": "Voyage Rerank 2.5 Lite",
-        "capability": "reranker",
-        "provider": "voyage",
-        "input":       0.02,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
-    "rerank-2": {
-        "label": "Voyage Rerank 2",
-        "capability": "reranker",
-        "provider": "voyage",
-        "input":       0.05,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
-    "rerank-2-lite": {
-        "label": "Voyage Rerank 2 Lite",
-        "capability": "reranker",
-        "provider": "voyage",
-        "input":       0.02,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
+def _load_table(path: Path) -> dict[str, dict]:
+    """Read and validate the shipped pricing table.
 
-    # ── OpenAI GPT-6 family (current generation) ──
-    # Unlike the GPT-5 rows below, these DO carry a cache-write fee — OpenAI
-    # lists one for the GPT-6 series. A zero here would undercount every
-    # cached call.
-    "gpt-6-astra": {
-        "label": "GPT-6 Astra",
-        "capability": "chat",
-        "provider": "openai",
-        "input":      10.000,
-        "output":     50.000,
-        "cache_write": 12.500,
-        "cache_read":   1.000,
-    },
-    "gpt-6.1-sol": {
-        "label": "GPT-6.1 Sol",
-        "capability": "chat",
-        "provider": "openai",
-        "input":       2.000,
-        "output":     10.000,
-        "cache_write":  2.500,
-        "cache_read":   0.100,
-    },
-    "gpt-6-sol": {
-        "label": "GPT-6 Sol",
-        "capability": "chat",
-        "provider": "openai",
-        "input":       2.000,
-        "output":     10.000,
-        "cache_write":  2.500,
-        "cache_read":   0.200,
-    },
-    "gpt-6-luna": {
-        "label": "GPT-6 Luna",
-        "capability": "chat",
-        "provider": "openai",
-        "input":       0.100,
-        "output":      0.500,
-        "cache_write":  0.125,
-        "cache_read":   0.010,
-    },
+    Raises:
+        InvalidRateRow: On a row missing required fields, carrying both flat
+            rates and tiers, or with a malformed tier list. Failing at import
+            is deliberate — a half-valid pricing table is a silently wrong
+            bill.
+    """
+    with path.open(encoding="utf-8") as fh:
+        table = json.load(fh)
+    for model, row in table.items():
+        missing = {"label", "capability", "provider"} - set(row)
+        if missing:
+            raise InvalidRateRow(f"{model!r} missing {sorted(missing)} in {path.name}")
+        has_flat = any(k in row for k in RATE_KEYS)
+        if ("tiers" in row) == has_flat:
+            raise InvalidRateRow(
+                f"{model!r} must carry either flat rates or `tiers`, not both/neither"
+            )
+        if "tiers" in row:
+            _validate_tiers(model, row["tiers"])
+        else:
+            absent = set(RATE_KEYS) - set(row)
+            if absent:
+                raise InvalidRateRow(f"{model!r} missing rate keys {sorted(absent)}")
+    return table
 
-    # ── OpenAI GPT-5 family (previous generation) ──
-    # cache_write is 0.00 on these rows because OpenAI charges nothing to
-    # populate the cache for the GPT-5 series — "known free", not
-    # "unmodelled". cache_read carries the real discounted rate. The GPT-6
-    # rows above DO have a write fee, so this is per-family, not a
-    # provider-wide rule.
-    "gpt-5.6-sol": {
-        "label": "GPT-5.6 Sol",
-        "capability": "chat",
-        "provider": "openai",
-        "input":        4.00,
-        "output":      20.00,
-        "cache_write":  5.000,
-        "cache_read":   0.400,
-    },
-    "gpt-5.6-terra": {
-        "label": "GPT-5.6 Terra",
-        "capability": "chat",
-        "provider": "openai",
-        "input":        2.00,
-        "output":      12.00,
-        "cache_write":  2.500,
-        "cache_read":   0.200,
-    },
-    "gpt-5.6-luna": {
-        "label": "GPT-5.6 Luna",
-        "capability": "chat",
-        "provider": "openai",
-        "input":        0.20,
-        "output":       1.20,
-        "cache_write":  0.250,
-        "cache_read":   0.020,
-    },
-    "gpt-5.5": {
-        "label": "GPT-5.5",
-        "capability": "chat",
-        "provider": "openai",
-        "input":        5.00,
-        "output":      30.00,
-        "cache_write":  0.000,
-        "cache_read":   0.500,
-    },
-    "gpt-5.5-pro": {
-        "label": "GPT-5.5 Pro",
-        "capability": "chat",
-        "provider": "openai",
-        "input":       30.00,
-        "output":     180.00,
-        "cache_write":  0.000,
-        "cache_read":   0.000,
-    },
-    "gpt-5.4": {
-        "label": "GPT-5.4",
-        "capability": "chat",
-        "provider": "openai",
-        "input":        2.50,
-        "output":      15.00,
-        "cache_write":  0.000,
-        "cache_read":   0.250,
-    },
-    "gpt-5.4-mini": {
-        "label": "GPT-5.4 Mini",
-        "capability": "chat",
-        "provider": "openai",
-        "input":        0.75,
-        "output":       4.50,
-        "cache_write":  0.000,
-        "cache_read":   0.075,
-    },
-    "gpt-5.4-nano": {
-        "label": "GPT-5.4 Nano",
-        "capability": "chat",
-        "provider": "openai",
-        "input":        0.20,
-        "output":       1.25,
-        "cache_write":  0.000,
-        "cache_read":   0.020,
-    },
-    "gpt-5.4-pro": {
-        "label": "GPT-5.4 Pro",
-        "capability": "chat",
-        "provider": "openai",
-        "input":       30.00,
-        "output":     180.00,
-        "cache_write":  0.000,
-        "cache_read":   0.000,
-    },
-    "gpt-5.2": {
-        "label": "GPT-5.2",
-        "capability": "chat",
-        "provider": "openai",
-        "input":        1.75,
-        "output":      14.00,
-        "cache_write":  0.000,
-        "cache_read":   0.175,
-    },
-    "gpt-5.2-pro": {
-        "label": "GPT-5.2 Pro",
-        "capability": "chat",
-        "provider": "openai",
-        "input":       21.00,
-        "output":     168.00,
-        "cache_write":  0.000,
-        "cache_read":   0.000,
-    },
-    "gpt-5.1": {
-        "label": "GPT-5.1",
-        "capability": "chat",
-        "provider": "openai",
-        "input":        1.25,
-        "output":      10.00,
-        "cache_write":  0.000,
-        "cache_read":   0.125,
-    },
-    "gpt-5": {
-        "label": "GPT-5",
-        "capability": "chat",
-        "provider": "openai",
-        "input":        1.25,
-        "output":      10.00,
-        "cache_write":  0.000,
-        "cache_read":   0.125,
-    },
-    "gpt-5-mini": {
-        "label": "GPT-5 Mini",
-        "capability": "chat",
-        "provider": "openai",
-        "input":        0.25,
-        "output":       2.00,
-        "cache_write":  0.000,
-        "cache_read":   0.025,
-    },
-    "gpt-5-nano": {
-        "label": "GPT-5 Nano",
-        "capability": "chat",
-        "provider": "openai",
-        "input":        0.05,
-        "output":       0.40,
-        "cache_write":  0.000,
-        "cache_read":   0.005,
-    },
-    "gpt-5-pro": {
-        "label": "GPT-5 Pro",
-        "capability": "chat",
-        "provider": "openai",
-        "input":       15.00,
-        "output":     120.00,
-        "cache_write":  0.000,
-        "cache_read":   0.000,
-    },
 
-    # ── OpenAI embeddings (current generation) ──
-    # Embeddings have no output or cache dimension, like the Voyage rows.
-    "text-embedding-3-small": {
-        "label": "OpenAI Embedding 3 Small",
-        "capability": "embedding",
-        "provider": "openai",
-        "input":        0.02,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
-    "text-embedding-3-large": {
-        "label": "OpenAI Embedding 3 Large",
-        "capability": "embedding",
-        "provider": "openai",
-        "input":        0.13,
-        "output":      0.00,
-        "cache_write": 0.00,
-        "cache_read":  0.00,
-    },
-}
+def _validate_tiers(model: str, tiers: object) -> None:
+    """Check a tier list: ascending thresholds, exactly one open-ended tier last."""
+    if not isinstance(tiers, list) or len(tiers) < 2:
+        raise InvalidRateRow(f"{model!r}: `tiers` must be a list of at least two tiers")
+    seen_open = False
+    last_threshold = 0
+    for i, tier in enumerate(tiers):
+        absent = set(RATE_KEYS) - set(tier)
+        if absent:
+            raise InvalidRateRow(f"{model!r} tier {i} missing {sorted(absent)}")
+        cap = tier.get("max_input_tokens")
+        if cap is None:
+            if i != len(tiers) - 1:
+                raise InvalidRateRow(
+                    f"{model!r}: only the last tier may omit `max_input_tokens`; "
+                    f"tier {i} does, leaving later tiers unreachable"
+                )
+            seen_open = True
+        else:
+            if cap <= last_threshold:
+                raise InvalidRateRow(
+                    f"{model!r} tier {i}: `max_input_tokens` must ascend "
+                    f"({cap} follows {last_threshold})"
+                )
+            last_threshold = cap
+    if not seen_open:
+        raise InvalidRateRow(
+            f"{model!r}: the last tier must omit `max_input_tokens` so every "
+            f"prompt size resolves to a rate"
+        )
+
+
+MODEL_PRICING: dict[str, dict] = _load_table(_TABLE_PATH)
 
 # The four USD-per-1M-token rate keys. `RATES` projects exactly these — an
 # allowlist, not "everything except `label`", so descriptive fields added to
 # the registry (`capability`, and whatever comes next) can never leak into
 # the cost-math view as non-float values.
-RATE_KEYS: tuple[str, ...] = ("input", "output", "cache_write", "cache_read")
 
 # Cost-math view of the registry: model id → {input, output, cache_write,
 # cache_read}. Derived (not restated) so it can never drift from
 # MODEL_PRICING.
+# Cost-math view of the registry, for FLAT-RATE models only. A tiered model
+# has no single rate, so inventing one here would be a number that is correct
+# on one side of its threshold and wrong on the other — exactly the silent
+# mispricing this module exists to avoid. Tiered models are therefore absent
+# from `RATES` and resolved by `_cost` instead; use `is_priced()`, not
+# `model in RATES`, to ask whether a model can be costed.
 RATES: dict[str, dict[str, float]] = {
     model_id: {k: row[k] for k in RATE_KEYS}
     for model_id, row in MODEL_PRICING.items()
+    if "tiers" not in row
 }
 
 # Immutable snapshot of the table as shipped, taken before any caller override
@@ -735,6 +331,14 @@ class ModelRecord(BaseModel):
     ``provider``, but not every provider has an adapter. `voyage` rows
     are priced and metered through `record_usage` with no adapter, by
     design.
+
+    **Tiered models.** When ``tiered`` is True the model's rate depends on
+    prompt size, and the four rate fields report the **entry tier** — the
+    cheapest one, matching how vendors present these ("From $0.10 / MTok").
+    ``tiers`` carries the full schedule. Those fields are for display; any
+    actual cost must come from `_cost` / `usd_for_usage`, which select the
+    right tier from the call's token counts. Reading ``input`` to compute a
+    bill would undercount every call above the threshold.
     """
 
     model_config = ConfigDict(extra="forbid")
@@ -747,6 +351,22 @@ class ModelRecord(BaseModel):
     output: float
     cache_write: float
     cache_read: float
+    tiered: bool = False
+    tiers: list[dict] | None = None
+    note: str | None = None
+
+
+def _record_for(model_id: str, row: Mapping[str, object]) -> ModelRecord:
+    """Build a `ModelRecord`, flattening a tiered row to its entry tier."""
+    if "tiers" in row:
+        entry = row["tiers"][0]                      # type: ignore[index]
+        rates = {k: float(entry[k]) for k in RATE_KEYS}
+        return ModelRecord(
+            id=model_id, label=row["label"], capability=row["capability"],   # type: ignore[arg-type]
+            provider=row["provider"], tiered=True,                            # type: ignore[arg-type]
+            tiers=list(row["tiers"]), note=row.get("note"), **rates,          # type: ignore[arg-type]
+        )
+    return ModelRecord(id=model_id, **row)                                    # type: ignore[arg-type]
 
 
 def catalog(capability: str | None = None) -> list[ModelRecord]:
@@ -766,10 +386,7 @@ def catalog(capability: str | None = None) -> list[ModelRecord]:
         >>> [m.id for m in catalog(CHAT)][:2]
         ['claude-fable-5', 'claude-opus-5']
     """
-    records = [
-        ModelRecord(id=model_id, **row)
-        for model_id, row in MODEL_PRICING.items()
-    ]
+    records = [_record_for(model_id, row) for model_id, row in MODEL_PRICING.items()]
     if capability is None:
         return records
     return [m for m in records if m.capability == capability]
@@ -790,10 +407,6 @@ class UnpricedModel(LookupError):
 # overrides stay visible: the library cannot vouch for a rate it did not
 # verify, and silent pricing is the failure this whole module exists to avoid.
 _overridden: set[str] = set()
-
-
-class InvalidRateRow(ValueError):
-    """Raised when a registered rate row is malformed or incomplete."""
 
 
 def _validate_row(model: str, row: Mapping[str, object], *, is_new: bool) -> dict:
@@ -901,19 +514,26 @@ def reset_overrides() -> None:
             RATES.pop(model, None)
         else:
             MODEL_PRICING[model] = dict(shipped)
-            RATES[model] = {k: float(shipped[k]) for k in RATE_KEYS}
+            if "tiers" in shipped:
+                RATES.pop(model, None)   # tiered models are absent from RATES
+            else:
+                RATES[model] = {k: float(shipped[k]) for k in RATE_KEYS}
     _overridden.clear()
 
 
 def is_priced(model: str) -> bool:
     """True when `model` has a rate row, and can therefore be costed.
 
-    The predicate behind pre-flight enforcement. Note this answers only
-    "can the token math run", not "is the resulting figure the complete
-    bill" — a priced model can still carry non-token line items the
-    library does not yet meter (server-side tool use; see issue #11).
+    The predicate behind pre-flight enforcement. Reads `MODEL_PRICING`
+    rather than `RATES`, because a tiered model is absent from the latter
+    by design and is still perfectly costable.
+
+    Note this answers only "can the token math run", not "is the resulting
+    figure the complete bill" — a priced model can still carry non-token
+    line items the library does not yet meter (server-side tool use; see
+    issue #11).
     """
-    return model in RATES
+    return model in MODEL_PRICING
 
 
 # ── Server-side tool pricing ───────────────────────────────────────────────────
@@ -1028,6 +648,32 @@ def _warn_unpriced(model: str) -> None:
     )
 
 
+def _rates_for(model: str, input_tok: int) -> dict[str, float] | None:
+    """The rate row to bill `model` at, given this call's input size.
+
+    Flat models return their single row. A tiered model selects the first
+    tier whose `max_input_tokens` the prompt does not exceed, falling through
+    to the open-ended last tier — which the loader guarantees exists, so every
+    prompt size resolves. Returns None for a model with no rates at all.
+
+    Selection is on **input tokens**, matching how vendors describe these
+    tiers ("for prompts up to N tokens"). Cached and cache-write tokens are
+    billed at the selected tier's rates but do not themselves move the
+    threshold; `input_tok` as passed is what decides.
+    """
+    flat = RATES.get(model)
+    if flat is not None:
+        return flat
+    row = MODEL_PRICING.get(model)
+    if row is None or "tiers" not in row:
+        return None
+    for tier in row["tiers"]:
+        cap = tier.get("max_input_tokens")
+        if cap is None or input_tok <= cap:
+            return {k: float(tier[k]) for k in RATE_KEYS}
+    return None  # pragma: no cover — loader guarantees an open-ended last tier
+
+
 def _cost(model: str, input_tok: int, output_tok: int,
           cache_read_tok: int = 0, cache_write_tok: int = 0) -> float:
     """Compute the USD cost of one model call from token counts.
@@ -1047,7 +693,7 @@ def _cost(model: str, input_tok: int, output_tok: int,
         unpriced (non-empty) model id is costed, `_warn_unpriced` fires a
         one-time operator alert + log line.
     """
-    r = RATES.get(model)
+    r = _rates_for(model, input_tok)
     if r is None:
         if model:  # skip the empty-string default (a usage dict missing `model`)
             _warn_unpriced(model)

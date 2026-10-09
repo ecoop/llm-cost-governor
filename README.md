@@ -178,7 +178,7 @@ record_usage(
 ## What's in / what's out
 
 **Included:**
-- Pricing for 47 currently-shipped models — Claude (Fable 5, Opus 5, Sonnet 5, Opus 4.6/4.7/4.8, Sonnet 4.6, Haiku 4.5), OpenAI (GPT-5 family + embeddings), and Voyage (embeddings + rerank). Each row carries its provider and capability, so consumers can filter the catalog instead of pattern-matching model ids. Easy to extend as new models ship.
+- Pricing for 48 currently-shipped models, in a shipped `pricing.json` validated at import — including **tiered** models whose rate steps with prompt size (Claude Haiku 5.5 is 5x cheaper below 100K input tokens) — Claude (Fable 5, Opus 5, Sonnet 5, Opus 4.6/4.7/4.8, Sonnet 4.6, Haiku 4.5), OpenAI (GPT-5 family + embeddings), and Voyage (embeddings + rerank). Each row carries its provider and capability, so consumers can filter the catalog instead of pattern-matching model ids. Easy to extend as new models ship.
 - Rolling-window counter with configurable caps + durable persistence.
 - `RollingWeekCounter` — a generic per-key, rolling-week cumulative counter with cap enforcement (strict or lenient) across one or more named dimensions; the reusable core behind app-specific caps like per-token/per-IP upload limits. Import from `llm_cost_governor.counters`.
 - `ProviderTotals` + `ProviderTotalsHook` — a per-provider cumulative-USD read-model (anthropic vs voyage vs …) for usage widgets and cost dashboards; the breakdown the windowed `CostCounter` aggregates away. In-memory by default, optionally persisted through a `StateBackend`. Import from `llm_cost_governor.provider_totals`.
@@ -215,7 +215,7 @@ CI runs on Python 3.11, 3.12, 3.13 via [GitHub Actions](.github/workflows/ci.yml
 
 ## Versioning
 
-Currently `v0.5.0`. Published to PyPI since `0.3.0`.
+Currently `v0.6.0`. Published to PyPI since `0.3.0`.
 
 | | |
 |---|---|
@@ -229,6 +229,7 @@ Currently `v0.5.0`. Published to PyPI since `0.3.0`.
 | `0.4.6` | rate provenance — `RATES_AS_OF`, plus a build failure when it goes stale |
 | `0.4.7` | **corrects Claude Sonnet 5 pricing**; adds Opus 5.5, Sonnet 5.5, Fable 5.1, Opus/Sonnet 4.5 and the GPT-6 family |
 | `0.5.0` | **rate overrides** — `register_rates()` / `load_rates()`, so an app can price a model we don't carry without waiting for a release |
+| `0.6.0` | table moves to `pricing.json`; **tiered pricing** — a model whose rate depends on prompt size; adds Claude Haiku 5.5 |
 
 Semver from `v1.0.0` onward; anything before is "shipped but pre-stable API — expect breaking changes."
 
