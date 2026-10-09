@@ -57,7 +57,13 @@ def fetch(url: str) -> str:
 
 
 def money(cell: str) -> float | None:
-    """Parse a price cell; None when the cell carries no number."""
+    """Parse a price cell.
+
+    None when the cell carries no number — a bare ``-``. What that absence
+    means depends on the column: no *charge* (so 0.0) in a cache-write
+    column, but no *context band at all* in a long-context one. This
+    function cannot tell them apart, so each caller decides.
+    """
     m = re.search(r"\$\s*([0-9]+(?:\.[0-9]+)?)", cell.replace(",", ""))
     return float(m.group(1)) if m else None
 
@@ -168,7 +174,15 @@ def main() -> int:
             continue
         for key, mine in ours.items():
             theirs = vendor.get(key)
-            if theirs is not None and abs(mine - theirs) > 1e-9:
+            if theirs is None:
+                # The vendor shows no number for this charge. Agreement when we
+                # also charge nothing; otherwise worth a look, rather than the
+                # silent skip that would hide a real difference.
+                if mine != 0:
+                    findings.append(
+                        f"  {model:26} {key:12} ours ${mine:<9} vendor lists no rate"
+                    )
+            elif abs(mine - theirs) > 1e-9:
                 findings.append(f"  {model:26} {key:12} ours ${mine:<9} vendor ${theirs}")
 
     # A model the vendor prices in two context bands, which our row flattens
@@ -177,7 +191,10 @@ def main() -> int:
         v = oai.get(model)
         if not v or "tiers" in row:
             continue
-        if v.get("long_input") is not None and v["long_input"] != v["input"]:
+        long_in = v.get("long_input")
+        # A '-' in the long columns means the model has no long-context band,
+        # not that it is free there — so require a real, differing rate.
+        if long_in and v["input"] and long_in != v["input"]:
             findings.append(
                 f"  {model:26} {'long-context':12} vendor splits at >272K input: "
                 f"in ${v['input']}->{v['long_input']}, out ${v['output']}->{v['long_output']}; "
@@ -192,13 +209,13 @@ def main() -> int:
         print("PRICING DRIFT\n")
         print("\n".join(sorted(set(findings))))
     if missing:
-        print(f"\nVendor models absent from our table ({len(missing)}): "
-              f"{', '.join(sorted(missing)[:12])}")
+        print(f"\n({len(missing)} vendor models are absent from our table. That is "
+              f"not drift — the table carries a chosen subset. Run with --list-absent "
+              f"to see them.)")
+        if "--list-absent" in sys.argv:
+            print("  " + "\n  ".join(sorted(missing)))
     if not findings:
         print("No drift: every flat row matches its vendor page.")
-        if missing:
-            print("(Absent models are listed above but are not drift — "
-                  "the table carries a chosen subset.)")
         return 0
     return 1
 
