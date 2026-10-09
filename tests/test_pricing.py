@@ -213,12 +213,14 @@ def test_openai_cache_rates_are_a_discount_or_absent():
 
     for model in [m for m in _openai_ids() if m.startswith("gpt-")]:
         row = MODEL_PRICING[model]
-        cr = row["cache_read"]
-        assert cr == 0.0 or 0 < cr < row["input"], (
-            f"{model} cache_read={cr} is neither absent nor a discount on "
-            f"input={row['input']}"
-        )
-        assert row["cache_write"] >= 0.0
+        # Applies per band: a tiered row must hold the invariant in each.
+        for i, rates in enumerate(row.get("tiers", [row])):
+            cr = rates["cache_read"]
+            assert cr == 0.0 or 0 < cr < rates["input"], (
+                f"{model} tier {i} cache_read={cr} is neither absent nor a "
+                f"discount on input={rates['input']}"
+            )
+            assert rates["cache_write"] >= 0.0
 
 
 def test_openai_chat_and_embedding_models_are_tagged():
@@ -340,7 +342,9 @@ def test_gpt6_rows_carry_a_cache_write_fee():
     from llm_cost_governor.pricing import MODEL_PRICING
 
     for model in [m for m in MODEL_PRICING if m.startswith("gpt-6")]:
-        assert MODEL_PRICING[model]["cache_write"] > 0, f"{model} lost its write fee"
+        row = MODEL_PRICING[model]
+        for i, rates in enumerate(row.get("tiers", [row])):
+            assert rates["cache_write"] > 0, f"{model} tier {i} lost its write fee"
 
 
 def test_cost_unknown_model_warns_operator_once(monkeypatch):
@@ -473,3 +477,27 @@ def test_entry_tier_is_the_cheapest():
 
     for m in (r for r in catalog() if r.tiered):
         assert m.input == min(t["input"] for t in MODEL_PRICING[m.id]["tiers"])
+
+
+def test_openai_long_context_bands_double_the_rate():
+    # Regression for the drift check's first real finding: seven rows carried
+    # only the short-context rate and understated 2x above 272K input tokens.
+    from llm_cost_governor.pricing import MODEL_PRICING
+
+    banded = [m for m in MODEL_PRICING
+              if m.startswith("gpt-") and "tiers" in MODEL_PRICING[m]]
+    assert len(banded) == 7, f"expected 7 banded OpenAI rows, found {len(banded)}"
+    for model in banded:
+        tiers = MODEL_PRICING[model]["tiers"]
+        assert tiers[0]["max_input_tokens"] == 272_000, f"{model} wrong threshold"
+        assert tiers[1]["input"] == pytest.approx(tiers[0]["input"] * 2), (
+            f"{model} long-context input should be 2x the short band"
+        )
+        assert "max_input_tokens" not in tiers[1], f"{model} long band must be open-ended"
+
+
+def test_long_context_billing_steps_at_272k():
+    below = _cost("gpt-6-astra", input_tok=272_000, output_tok=0)
+    above = _cost("gpt-6-astra", input_tok=272_001, output_tok=0)
+    assert below == pytest.approx(272_000 / 1e6 * 10.00)
+    assert above == pytest.approx(272_001 / 1e6 * 20.00)

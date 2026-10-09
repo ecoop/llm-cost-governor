@@ -185,7 +185,7 @@ RATE_SOURCES: dict[str, str] = {
 
 RATES_AS_OF: dict[str, date] = {
     "anthropic": date(2026, 9, 29),
-    "openai": date(2026, 9, 29),
+    "openai": date(2026, 10, 9),
     "voyage": date(2026, 8, 1),
     "anthropic-server-tools": date(2026, 8, 28),
 }
