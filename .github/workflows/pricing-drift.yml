@@ -1,0 +1,102 @@
+name: Pricing drift
+
+# Vendors publish no machine-readable price feed, so the table is
+# hand-maintained and can only be wrong silently. This re-reads their
+# published pages weekly and opens an issue when they disagree with us.
+#
+# It never edits the table. A parser bug that confidently "corrects" a rate
+# would be worse than the stale rate it replaced, so a human transcribes
+# every change; the automation's job is only to make sure someone notices.
+on:
+  schedule:
+    - cron: "17 9 * * 1"        # Mondays, 09:17 UTC
+  workflow_dispatch:             # and a Run button, for after a vendor announcement
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Compare the table against the vendor pages
+        id: check
+        run: |
+          set +e
+          python scripts/check_pricing_drift.py > drift.txt 2>drift.err
+          echo "status=$?" >> "$GITHUB_OUTPUT"
+          cat drift.txt; cat drift.err >&2
+
+      # Exit 2 means extraction broke: the check has stopped working and would
+      # otherwise pass silently forever. That is its own, louder failure.
+      - name: Extraction broke
+        if: steps.check.outputs.status == '2'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const body = [
+              'The weekly pricing-drift check could not read a vendor page, so it is',
+              'no longer comparing anything. Until this is fixed the check passes',
+              'silently and drift goes unnoticed.',
+              '', '```', fs.readFileSync('drift.err', 'utf8').slice(0, 4000), '```',
+              '', `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            ].join('\n');
+            const title = 'Pricing drift check is broken (extraction failed)';
+            const open = await github.rest.issues.listForRepo({
+              ...context.repo, state: 'open', labels: 'pricing-drift',
+            });
+            const existing = open.data.find(i => i.title === title);
+            if (existing) {
+              await github.rest.issues.createComment({ ...context.repo, issue_number: existing.number, body });
+            } else {
+              await github.rest.issues.create({
+                ...context.repo, title, body, labels: ['pricing-drift'],
+                assignees: [context.repo.owner],
+              });
+            }
+
+      - name: Report drift
+        if: steps.check.outputs.status == '1'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const report = fs.readFileSync('drift.txt', 'utf8');
+            const today = new Date().toISOString().slice(0, 10);
+            const body = [
+              'The vendor pages disagree with `src/llm_cost_governor/pricing.json`.',
+              '', '```', report.slice(0, 50000), '```', '',
+              '**Transcribe by hand.** This check deliberately does not edit the table —',
+              'a parser bug that writes a confident wrong rate is worse than a stale one.',
+              'Verify each line against the source page, then update the row and bump the',
+              "vendor's entry in `RATES_AS_OF` in the same commit.",
+              '', `Run: ${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
+            ].join('\n');
+            const title = `Pricing drift detected (${today})`;
+            const open = await github.rest.issues.listForRepo({
+              ...context.repo, state: 'open', labels: 'pricing-drift',
+            });
+            const existing = open.data.find(i => i.title.startsWith('Pricing drift detected'));
+            if (existing) {
+              // Re-report into the open issue rather than opening a second one,
+              // and say how long it has been waiting — unactioned drift is the
+              // failure mode this escalation exists for.
+              const age = Math.floor(
+                (Date.now() - new Date(existing.created_at)) / 86400000);
+              await github.rest.issues.createComment({
+                ...context.repo, issue_number: existing.number,
+                body: `Still drifting after **${age} day(s)**.\n\n${body}`,
+              });
+            } else {
+              await github.rest.issues.create({
+                ...context.repo, title, body, labels: ['pricing-drift'],
+                assignees: [context.repo.owner],
+              });
+            }
