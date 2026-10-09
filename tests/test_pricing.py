@@ -64,13 +64,18 @@ def test_model_pricing_rows_are_complete():
     # don't bill those token dimensions (Voyage embeddings + rerank).
     from llm_cost_governor.pricing import MODEL_PRICING
 
-    required = {"label", "input", "output", "cache_read", "cache_write"}
+    rate_keys = {"input", "output", "cache_read", "cache_write"}
     for model, row in MODEL_PRICING.items():
-        assert required.issubset(row.keys()), f"{model} missing fields"
         assert isinstance(row["label"], str) and row["label"], f"{model} bad label"
-        assert row["input"] > 0, f"{model} has non-positive input rate"
-        for k in ("output", "cache_read", "cache_write"):
-            assert row[k] >= 0, f"{model} has negative {k} rate"
+        # A row carries either flat rates or a tier schedule — never both,
+        # never neither. The loader enforces it; this keeps the invariant
+        # visible to anyone reading the tests.
+        rate_rows = row.get("tiers", [row])
+        for i, rates in enumerate(rate_rows):
+            assert rate_keys.issubset(rates.keys()), f"{model} tier {i} missing rate keys"
+            assert rates["input"] > 0, f"{model} tier {i} has non-positive input rate"
+            for k in ("output", "cache_read", "cache_write"):
+                assert rates[k] >= 0, f"{model} tier {i} has negative {k} rate"
 
 
 def test_model_pricing_keys_are_bare_aliases():
@@ -162,8 +167,11 @@ def test_catalog_records_carry_the_registry_rates():
     for m in catalog():
         row = MODEL_PRICING[m.id]
         assert m.label == row["label"]
+        # A tiered record reports its ENTRY tier in the flat fields — the
+        # cheapest one, matching the vendor's own "From $X" presentation.
+        source = row["tiers"][0] if m.tiered else row
         for k in RATE_KEYS:
-            assert getattr(m, k) == row[k], f"{m.id}.{k} drifted from the registry"
+            assert getattr(m, k) == source[k], f"{m.id}.{k} drifted from the registry"
 
 
 def test_embedding_and_reranker_models_are_not_chat():
@@ -430,3 +438,38 @@ def test_record_handles_cache_tokens():
 def test_budget_exceeded_is_exception():
     # Subclass check — callers may try/except on the bare class.
     assert issubclass(BudgetExceeded, Exception)
+
+
+def test_tiered_models_are_absent_from_RATES_but_still_priced():
+    # RATES is the flat-rate projection. Inventing a single rate for a tiered
+    # model would be right on one side of its threshold and wrong on the
+    # other, so they are excluded — and is_priced() reads MODEL_PRICING so
+    # they are still costable and still admitted by the pre-flight gate.
+    from llm_cost_governor.pricing import MODEL_PRICING, RATES, is_priced
+
+    tiered = [m for m, r in MODEL_PRICING.items() if "tiers" in r]
+    assert tiered, "expected at least one tiered model"
+    for model in tiered:
+        assert model not in RATES
+        assert is_priced(model)
+        assert _cost(model, input_tok=1_000, output_tok=0) > 0
+
+
+def test_tier_selection_steps_at_the_threshold():
+    # claude-haiku-5-5: $0.10/MTok up to 100K input tokens, $0.50 above.
+    below = _cost("claude-haiku-5-5", input_tok=100_000, output_tok=0)
+    above = _cost("claude-haiku-5-5", input_tok=100_001, output_tok=0)
+    # Derived from the rates rather than hardcoded, so the assertion can't
+    # drift from the table or encode a transcription slip.
+    assert below == pytest.approx(100_000 / 1e6 * 0.10)
+    assert above == pytest.approx(100_001 / 1e6 * 0.50)
+    assert above / below > 4, "the tier step should be ~5x, not a rounding difference"
+
+
+def test_entry_tier_is_the_cheapest():
+    # The record's flat fields advertise the entry tier; if a schedule were
+    # ever ordered cheapest-last, consumers would display the wrong headline.
+    from llm_cost_governor.pricing import MODEL_PRICING, catalog
+
+    for m in (r for r in catalog() if r.tiered):
+        assert m.input == min(t["input"] for t in MODEL_PRICING[m.id]["tiers"])
