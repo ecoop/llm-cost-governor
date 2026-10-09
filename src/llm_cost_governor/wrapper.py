@@ -268,6 +268,30 @@ def guarded_call(
     return response, usage
 
 
+def _honour_priced_model_gate(hooks: Sequence[Hook], ctx: CallContext) -> None:
+    """Run the unpriced-model gate, if the caller supplied one.
+
+    `record_usage` otherwise runs only post-hooks, which made
+    `RequirePricedModelHook` silently inert here — an unpriced model went
+    through at $0 and contributed nothing to any budget, which is the exact
+    failure the gate exists to stop (issue #28). A caller who put the gate in
+    their hook list has already said, in code, that they want unpriced models
+    refused; honouring that is less surprising than ignoring it.
+
+    **This raises after the provider call has already happened.** Unlike
+    `guarded_call`, nothing can be prevented here — the money is spent. What
+    it buys is that the accounting failure is loud instead of a silent $0.
+    That trade is why this runs only when the gate is present: a caller who
+    never asked for it keeps the tolerant behaviour.
+
+    Identified by the Hook protocol's `name` rather than by type, because
+    `budget` imports from this module and importing it back would be a cycle.
+    """
+    for hook in hooks:
+        if getattr(hook, "name", None) == "require_priced_model":
+            hook.pre(ctx)
+
+
 def record_usage(
     *,
     provider: str,
@@ -302,11 +326,21 @@ def record_usage(
             spend billed outside the token dimension still reaches every
             budget and cap. Omit when the call used no server-side tools.
         hooks: Post-hooks to run. Same protocol as ``guarded_call`` —
-            failures are logged and swallowed.
+            failures are logged and swallowed. One exception:
+            ``RequirePricedModelHook``, if present, runs its pre-step here
+            and its `UnpricedModel` propagates. See Raises.
         tags: Opaque caller annotations, forwarded to ``UsageRecord.tags``.
 
     Returns:
         The constructed and hook-processed ``UsageRecord``.
+
+    Raises:
+        pricing.UnpricedModel: When `hooks` includes a
+            `RequirePricedModelHook` and `model` has no rate row. Note this
+            fires *after* the provider call the caller already made — it
+            cannot prevent spend, only stop that spend being silently
+            recorded as $0. Callers who omit the gate keep the tolerant
+            behaviour and get $0 plus a warn-once alert.
     """
     tokens = {
         "input_tokens": input_tokens,
@@ -337,5 +371,6 @@ def record_usage(
         tags=dict(tags or {}),
         estimate=TokenEstimate(input_tokens=0, output_tokens=0),
     )
+    _honour_priced_model_gate(hooks, ctx)
     HookChain(hooks).run_post(ctx, usage)
     return usage
