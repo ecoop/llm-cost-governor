@@ -216,7 +216,7 @@ CI runs on Python 3.11, 3.12, 3.13 via [GitHub Actions](.github/workflows/ci.yml
 
 ## Versioning
 
-Currently `v0.6.1`. Published to PyPI since `0.3.0`.
+Currently `v0.7.0`. Published to PyPI since `0.3.0`.
 
 | | |
 |---|---|
@@ -232,6 +232,7 @@ Currently `v0.6.1`. Published to PyPI since `0.3.0`.
 | `0.5.0` | **rate overrides** — `register_rates()` / `load_rates()`, so an app can price a model we don't carry without waiting for a release |
 | `0.6.0` | table moves to `pricing.json`; **tiered pricing** — a model whose rate depends on prompt size; adds Claude Haiku 5.5 |
 | `0.6.1` | **corrects seven OpenAI rows** that carried only the short-context rate and understated 2x above 272K input tokens |
+| `0.7.0` | `record_usage` now honours `RequirePricedModelHook` — it was silently inert on that path |
 
 Semver from `v1.0.0` onward; anything before is "shipped but pre-stable API — expect breaking changes."
 

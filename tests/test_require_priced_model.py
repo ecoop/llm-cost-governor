@@ -267,3 +267,74 @@ def test_build_budget_chain_shares_one_budget_across_iterations():
         hooks = build_budget_chain(budget=sweep)
         hooks[1].post(_ctx("claude-opus-5"), usage)
     assert sweep.spent_usd == pytest.approx(90.00)
+
+
+# ── the gate under record_usage (#28) ─────────────────────────────────────────
+
+def _usage_kwargs(model, **over):
+    return {"provider": "voyage", "model": model,
+            "input_tokens": 1_000_000, "output_tokens": 0, **over}
+
+
+def test_record_usage_honours_the_gate_when_present():
+    # Before this, the gate was silently inert here: record_usage runs only
+    # post-hooks, so an unpriced model went through at $0 and moved no budget.
+    from llm_cost_governor.wrapper import record_usage
+
+    with pytest.raises(UnpricedModel, match="acme-does-not-exist-000"):
+        record_usage(**_usage_kwargs("acme-does-not-exist-000"),
+                     hooks=[RequirePricedModelHook()])
+
+
+def test_record_usage_stays_tolerant_without_the_gate():
+    # A caller who never asked for refusal keeps the documented behaviour:
+    # $0 plus a warn-once alert, rather than a new exception in their path.
+    from llm_cost_governor.wrapper import record_usage
+
+    rec = record_usage(**_usage_kwargs("acme-does-not-exist-000"), hooks=[])
+    assert rec.cost_usd == 0.0
+
+
+def test_record_usage_gate_respects_exempt():
+    from llm_cost_governor.wrapper import record_usage
+
+    rec = record_usage(**_usage_kwargs("acme-does-not-exist-000"),
+                       hooks=[RequirePricedModelHook(exempt={"acme-does-not-exist-000"})])
+    assert rec.cost_usd == 0.0
+
+
+def test_record_usage_gate_does_not_disturb_a_priced_model():
+    from llm_cost_governor.wrapper import record_usage
+
+    rec = record_usage(**_usage_kwargs("voyage-4"), hooks=[RequirePricedModelHook()])
+    assert rec.cost_usd > 0
+
+
+def test_record_usage_refuses_before_recording_anything():
+    # The point of raising at all: the money is already spent, so the only
+    # thing left to protect is the ledger. A refused call must not have
+    # contributed $0 to a budget on its way out.
+    from llm_cost_governor.wrapper import record_usage
+
+    budget = ScopeBudget(limit_usd=10.00)
+    with pytest.raises(UnpricedModel):
+        record_usage(**_usage_kwargs("acme-does-not-exist-000"),
+                     hooks=[RequirePricedModelHook(), ScopeBudgetHook(budget)])
+    assert budget.spent_usd == 0.0
+
+
+def test_guarded_call_path_is_unchanged():
+    # The gate's pre-flight behaviour must not have shifted; it still refuses
+    # before any SDK call, which record_usage cannot do.
+    class _Client:
+        class messages:
+            @staticmethod
+            def create(**kw):  # pragma: no cover — must never be reached
+                raise AssertionError("SDK was called despite an unpriced model")
+
+    from llm_cost_governor.wrapper import guarded_call
+
+    with pytest.raises(UnpricedModel):
+        guarded_call(_Client(), provider="anthropic",
+                     hooks=[RequirePricedModelHook()],
+                     model="acme-does-not-exist-000", messages=[], max_tokens=16)
