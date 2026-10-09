@@ -23,6 +23,56 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
       - name: Ruff
-        run: ruff check src tests
+        run: ruff check src tests scripts
       - name: Pytest
         run: pytest -v
+
+  # The job above runs against the source tree, where pricing.json happens to
+  # sit beside pricing.py. That proves nothing about the artifact we publish:
+  # if the data file is left out of the wheel the library cannot even import,
+  # and every test above would still pass. So build it, install it, and price
+  # from a directory with no source tree in sight.
+  packaging:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build the wheel
+        run: |
+          python -m pip install --upgrade pip build
+          python -m build --wheel --outdir dist
+
+      - name: The data file must be inside the wheel
+        run: |
+          python - <<'EOF'
+          import pathlib, sys, zipfile
+          wheel = next(pathlib.Path("dist").glob("*.whl"))
+          names = zipfile.ZipFile(wheel).namelist()
+          needed = "llm_cost_governor/pricing.json"
+          if needed not in names:
+              sys.exit(f"{needed} missing from {wheel.name}; the published "
+                       f"package would fail to import")
+          print(f"{needed} present in {wheel.name}")
+          EOF
+
+      - name: Install it and price from outside the source tree
+        run: |
+          python -m venv /tmp/clean
+          /tmp/clean/bin/pip install --quiet dist/*.whl
+          cd /tmp
+          /tmp/clean/bin/python - <<'EOF'
+          import os
+          from llm_cost_governor.pricing import MODEL_PRICING, _cost, is_priced
+          assert len(MODEL_PRICING) > 40, f"only {len(MODEL_PRICING)} rows loaded"
+          assert _cost("claude-opus-5", 1_000_000, 1_000_000) > 0
+          tiered = [m for m, r in MODEL_PRICING.items() if "tiers" in r]
+          assert tiered, "no tiered model in the installed table"
+          for model in tiered:
+              assert is_priced(model), f"{model} not priced from the wheel"
+              assert _cost(model, 1_000, 0) > 0
+          print(f"installed wheel prices {len(MODEL_PRICING)} models "
+                f"({len(tiered)} tiered) from {os.getcwd()}")
+          EOF
