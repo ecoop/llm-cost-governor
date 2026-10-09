@@ -97,7 +97,9 @@ MODEL_PRICING: dict[str, dict] = {
         "input":       2.00,
         "output":     10.00,
         "cache_write": 2.50,
-        "cache_read":  0.20,
+        "cache_read":  0.10,    # 0.05x input — the vendor footnote listed
+                                # Opus 5.5 only on 2026-09-29 and now names
+                                # Sonnet 5.5 too. Re-verified 2026-10-09.
     },
 
     # ── Claude 5 family ──
@@ -563,6 +565,11 @@ RATES: dict[str, dict[str, float]] = {
     for model_id, row in MODEL_PRICING.items()
 }
 
+# Immutable snapshot of the table as shipped, taken before any caller override
+# can touch it. `reset_overrides()` restores from this rather than re-deriving,
+# so a test that overrides a shipped model puts back the exact verified row.
+_SHIPPED_PRICING: dict[str, dict] = {m: dict(r) for m, r in MODEL_PRICING.items()}
+
 # ── Rate provenance ───────────────────────────────────────────────────────────
 # When each vendor's published rates were last checked against the source
 # below. Machine-readable on purpose: a stale rate is the one failure the
@@ -623,6 +630,74 @@ def stalest_rates(*, today: date | None = None) -> tuple[str, int]:
     ages = {src: rates_age_days(src, today=today) for src in RATES_AS_OF}
     worst = max(ages, key=lambda k: ages[k])
     return worst, ages[worst]
+
+
+def load_rates(source: object, *, object_name: str = "rates.json") -> None:
+    """Register rate overrides from a JSON (or YAML) document.
+
+    The file form of `register_rates`, so a price correction is a config
+    change rather than a code change. Accepts:
+
+    * a path (`str` / `os.PathLike`) — read from disk;
+    * a `StateBackend` — read `object_name` through it, which is how a rates
+      file can live in the same GCS bucket as your counters and be edited
+      without rebuilding an image;
+    * a `str` of JSON — if you fetched it yourself.
+
+    **This library never reads an environment variable** (see
+    `docs/integration.md`), so where the path comes from is your config
+    layer's business, not ours.
+
+    JSON always works — it is stdlib, and the core install deliberately
+    carries one dependency. `.yaml` / `.yml` paths additionally need
+    `pyyaml`, available as the ``[yaml]`` extra; without it you get an
+    ImportError naming the extra rather than a parse failure.
+
+    The document is one object of ``{model_id: row}``, exactly the shape
+    `register_rates` takes::
+
+        {"claude-sonnet-5": {"input": 2.00, "output": 10.00}}
+
+    Raises:
+        InvalidRateRow: On a malformed document or row.
+    """
+    import json
+    import os
+
+    text: str
+    if hasattr(source, "read") and callable(source.read):     # StateBackend
+        blob = source.read(object_name)
+        if blob is None:
+            raise InvalidRateRow(f"no rates object {object_name!r} in that backend")
+        text, name = blob, object_name
+    elif isinstance(source, str) and source.lstrip()[:1] in "{[":
+        # A document, not a path. Both JSON braces are accepted so that a
+        # non-object document fails with "expected an object" rather than a
+        # confusing FileNotFoundError about its own first line.
+        text, name = source, "<string>"
+    else:
+        path = os.fspath(source)  # type: ignore[arg-type]
+        with open(path, encoding="utf-8") as fh:
+            text = fh.read()
+        name = path
+
+    if name.endswith((".yaml", ".yml")):
+        try:
+            import yaml
+        except ImportError as exc:                            # pragma: no cover
+            raise ImportError(
+                f"parsing {name} needs PyYAML — install llm-cost-governor[yaml], "
+                f"or use JSON, which needs no extra"
+            ) from exc
+        data = yaml.safe_load(text)
+    else:
+        data = json.loads(text)
+
+    if not isinstance(data, dict):
+        raise InvalidRateRow(
+            f"{name}: expected an object of {{model_id: row}}, got {type(data).__name__}"
+        )
+    register_rates(data)
 
 
 # Provider vocabulary. These strings are also the names
@@ -708,6 +783,126 @@ class UnpricedModel(LookupError):
     must not break a response that succeeded. It is raised pre-flight by
     `budget.RequirePricedModelHook`, where aborting is still free.
     """
+
+
+# ── Caller-supplied rate overrides ────────────────────────────────────────────
+# Model ids whose rates came from the caller rather than this table. Kept so
+# overrides stay visible: the library cannot vouch for a rate it did not
+# verify, and silent pricing is the failure this whole module exists to avoid.
+_overridden: set[str] = set()
+
+
+class InvalidRateRow(ValueError):
+    """Raised when a registered rate row is malformed or incomplete."""
+
+
+def _validate_row(model: str, row: Mapping[str, object], *, is_new: bool) -> dict:
+    """Check one registered row and return it as a plain dict.
+
+    A new model needs a complete record — `catalog()` filters on `capability`
+    and `provider`, so a row missing them would price correctly and then be
+    invisible to any consumer that lists models. An existing model needs only
+    the rates being changed.
+    """
+    out = dict(row)
+    if is_new:
+        missing = {"label", "capability", "provider", *RATE_KEYS} - set(out)
+        if missing:
+            raise InvalidRateRow(
+                f"{model!r} is not in MODEL_PRICING, so registering it needs a "
+                f"complete record; missing: {sorted(missing)}"
+            )
+    unknown_rate_keys = {k for k in out if k in RATE_KEYS}
+    for k in unknown_rate_keys:
+        v = out[k]
+        if not isinstance(v, int | float) or isinstance(v, bool):
+            raise InvalidRateRow(f"{model!r}.{k} must be a number, got {v!r}")
+        if v < 0:
+            raise InvalidRateRow(f"{model!r}.{k} must not be negative, got {v}")
+    if is_new and out.get("input", 0) <= 0:
+        raise InvalidRateRow(f"{model!r} has a non-positive input rate")
+    return out
+
+
+def register_rates(rows: Mapping[str, Mapping[str, object]]) -> None:
+    """Overlay caller-supplied rates on top of the shipped pricing table.
+
+    This is how an application prices a model the library does not carry, or
+    corrects one it carries wrongly, **without waiting for a release here**.
+
+    Semantics are an overlay, per model:
+
+    * An **existing** model id takes a partial update — give only the rates
+      you are changing; `label` / `capability` / `provider` are kept.
+    * A **new** model id needs a complete record, because `catalog()` filters
+      on `capability` and `provider`.
+    * Nothing is ever removed, so upgrading still brings you our corrections —
+      but an override is **sticky**: yours keeps winning until you drop it.
+      Treat one as a temporary patch, not a fix.
+
+    Registration updates `MODEL_PRICING` and `RATES` together, so a registered
+    model is immediately priced by `_cost`, admitted by `is_priced` and
+    therefore by `RequirePricedModelHook`, and listed by `catalog()`. Pricing a
+    model that the pre-flight gate then refuses would be worse than the gap
+    this closes, so the three are kept consistent by construction.
+
+    Call once at startup, before serving traffic. Registration is not
+    synchronised; it is a startup action, not a runtime one.
+
+    Args:
+        rows: Model id → row. A row may carry any of `RATE_KEYS` plus
+            `label` / `capability` / `provider`.
+
+    Raises:
+        InvalidRateRow: On a malformed row, or an incomplete one for a model
+            not already in the table. Nothing is applied if any row is bad —
+            a half-applied override is a silently wrong price.
+
+    Example:
+        >>> register_rates({"claude-sonnet-5": {"input": 2.00, "output": 10.00}})
+        >>> register_rates({"acme-1": {"label": "Acme 1", "capability": "chat",
+        ...                            "provider": "acme", "input": 1.0,
+        ...                            "output": 3.0, "cache_write": 0.0,
+        ...                            "cache_read": 0.0}})
+    """
+    # Validate everything first: applying some rows and rejecting others would
+    # leave the table in a state nobody wrote down.
+    validated = {
+        model: _validate_row(model, row, is_new=model not in MODEL_PRICING)
+        for model, row in rows.items()
+    }
+    for model, row in validated.items():
+        merged = {**MODEL_PRICING.get(model, {}), **row}
+        MODEL_PRICING[model] = merged
+        RATES[model] = {k: float(merged[k]) for k in RATE_KEYS}
+        _overridden.add(model)
+        _log.info(
+            "pricing: rates for %r are caller-supplied, not from this table's "
+            "verified figures", model,
+        )
+
+
+def overridden_models() -> frozenset[str]:
+    """Model ids whose rates were supplied by the caller via `register_rates`.
+
+    Exposed so an app can surface "N rates are locally overridden" beside its
+    spend — the freshness machinery deliberately ignores these, because the
+    library has no basis to call a caller-supplied rate fresh or stale.
+    """
+    return frozenset(_overridden)
+
+
+def reset_overrides() -> None:
+    """Drop every registered override, restoring the shipped table. For tests."""
+    for model in list(_overridden):
+        shipped = _SHIPPED_PRICING.get(model)
+        if shipped is None:
+            MODEL_PRICING.pop(model, None)
+            RATES.pop(model, None)
+        else:
+            MODEL_PRICING[model] = dict(shipped)
+            RATES[model] = {k: float(shipped[k]) for k in RATE_KEYS}
+    _overridden.clear()
 
 
 def is_priced(model: str) -> bool:

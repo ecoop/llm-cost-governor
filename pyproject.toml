@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "llm-cost-governor"
-version = "0.4.7"
+version = "0.5.0"
 description = "Composable pre-call and post-call hooks for LLM API calls: pricing, budgets, cost caps, rate limits, event log, observability."
 readme = "README.md"
 license = { file = "LICENSE" }
@@ -29,6 +29,10 @@ dependencies = [
 # Google Cloud Storage state backend — for durable counter/state persistence
 # in production deployments on GCP.
 gcs = ["google-cloud-storage>=2.18"]
+
+# YAML rate-override files — JSON needs no extra; this is only for callers
+# who prefer YAML for `pricing.load_rates`.
+yaml = ["pyyaml>=6.0"]
 
 # FastAPI adapters — the IP-rate-limit dependency factory and other
 # request-scoped helpers.
